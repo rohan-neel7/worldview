@@ -43,7 +43,7 @@ app.use(express.json({ limit: '10kb' }));
 // Note: In-memory limits apply per-instance. For horizontal multi-instance scaling, swap with Redis store.
 const geminiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
+  max: 60,
   message: { error: 'Too Many Requests', message: 'Gemini request rate limit exceeded for this IP. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
