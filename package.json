@@ -1,4 +1,12 @@
 {
+  "name": "worldview-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix worldview run dev",
+    "server": "npm --prefix worldview run server",
+    "build": "npm --prefix worldview run build",
+    "start": "npm --prefix worldview run start"
+  },
   "dependencies": {
     "cesium": "^1.139.1",
     "resium": "^1.19.4",
