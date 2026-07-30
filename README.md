@@ -8,6 +8,7 @@ Worldview is a real-time 3D geospatial intelligence and situational-awareness pl
 ![React](https://img.shields.io/badge/React-19.2-blue?style=for-the-badge&logo=react)
 ![Vite](https://img.shields.io/badge/Vite-7.3-purple?style=for-the-badge&logo=vite)
 ![CesiumJS](https://img.shields.io/badge/CesiumJS-1.139-green?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
 ---
 
@@ -221,4 +222,4 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [S
 
 ## License
 
-This repository does not currently include an open-source license. All rights reserved by the author. Prior to public redistribution or commercial use, an explicit license (e.g., MIT or Apache 2.0) should be added.
+This project is licensed under the [MIT License](LICENSE).
