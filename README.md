@@ -1,5 +1,7 @@
 # Worldview
 
+![Worldview Command Interface](docs/worldview_dashboard.png)
+
 Worldview is a real-time 3D geospatial intelligence and situational-awareness platform for visualizing global human activity, natural phenomena, orbital assets, and live maritime operations. Built with React 19, Vite 7, CesiumJS, and Google Gemini Pro, it presents a cinematic operational command interface inspired by modern defense intelligence dashboards.
 
 ![Worldview Circular Viewport](https://img.shields.io/badge/Interface-Palantir--Style-cyan?style=for-the-badge)
