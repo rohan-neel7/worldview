@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useWorldView } from '../WorldViewContext';
 
 export default function useGemini({ flightCount, quakeCount, satCount, topQuake, selectedRegion }) {
@@ -28,10 +28,9 @@ export default function useGemini({ flightCount, quakeCount, satCount, topQuake,
       });
 
       const data = await res.json();
-      const text = data.intelligence;
 
-      if (text) {
-        const trimmed = text.trim();
+      if (res.ok && data.intelligence) {
+        const trimmed = data.intelligence.trim();
         setIntelligence(trimmed);
         setGeminiOutput(trimmed);
         setPriority(
@@ -39,11 +38,11 @@ export default function useGemini({ flightCount, quakeCount, satCount, topQuake,
           trimmed.includes('MED') ? 'MED' : 'LOW'
         );
       } else {
-        throw new Error(data.message || 'No intelligence output');
+        throw new Error(data.message || data.error || 'No intelligence output');
       }
     } catch (e) {
       console.error('Gemini error:', e);
-      const fallback = '[PRIORITY: LOW] Intelligence feed offline. Manual analysis required.';
+      const fallback = `[PRIORITY: LOW] ${e.message || 'Intelligence feed offline. Manual analysis required.'}`;
       setIntelligence(fallback);
       setGeminiOutput(fallback);
       setPriority('LOW');
@@ -51,22 +50,6 @@ export default function useGemini({ flightCount, quakeCount, satCount, topQuake,
       setLoading(false);
     }
   }, [flightCount, quakeCount, satCount, topQuake, selectedRegion, setGeminiOutput]);
-
-  // Auto-trigger on mount after staggering 15 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      runAnalysis();
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Auto-repeat every 60 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      runAnalysis();
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [flightCount, quakeCount]);
 
   return { intelligence, priority, loading, runAnalysis };
 }

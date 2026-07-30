@@ -334,8 +334,9 @@ Snapshot:
     res.json({ intelligence: trimmed, cached: false });
   } catch (err) {
     console.error('[Gemini Proxy Error]:', err.message);
-    res.json({
-      intelligence: '[PRIORITY: LOW] Intelligence feed offline. Upstream connection unavailable.',
+    res.status(500).json({
+      error: err.message,
+      intelligence: `[PRIORITY: LOW] ${err.message}`,
       fallback: true
     });
   }
