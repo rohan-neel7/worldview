@@ -264,8 +264,8 @@ Snapshot:
 - Top seismic event: ${normTopQuake || 'no significant events'}
 - Region: ${normRegion}`;
 
-    const apiKey1 = process.env.GEMINI_API_KEY_1;
-    const apiKey2 = process.env.GEMINI_API_KEY_2;
+    const apiKey1 = process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY_1;
+    const apiKey2 = process.env.GEMINI_API_KEY_2 || process.env.VITE_GEMINI_KEY_2;
 
     if (!apiKey1 && !apiKey2) {
       return res.json({
@@ -460,8 +460,10 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
+  const keyStatus = (process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY_1) ? 'CONFIGURED ✅' : 'NOT CONFIGURED ❌';
   console.log(`=======================================================`);
   console.log(` Worldview API Proxy Server running on port ${PORT}`);
+  console.log(` Gemini AI Key: ${keyStatus}`);
   console.log(` Health check: http://localhost:${PORT}/api/health`);
   console.log(`=======================================================`);
 });
