@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+@import "tailwindcss";
+
+/* ── Design System Tokens (Bilawal Sidhu WorldView Style) ── */
+:root {
+  --color-cyan: #00FFFF;
+  --color-cyan-dim: rgba(0, 255, 255, 0.4);
+  --color-cyan-glow: rgba(0, 255, 255, 0.1);
+  --color-amber: #FFD700;
+  --color-red: #FF4444;
+  --color-white: #FFFFFF;
+  --color-bg: #000000;
+
+  --panel-bg: rgba(0, 6, 10, 0.82);
+  --panel-border: rgba(0, 255, 255, 0.174);
+
+  --font-mono: 'Share Tech Mono', monospace;
+
+  /* Typography Scale */
+  --font-xs: clamp(11px, 0.75vw, 12px);
+  --font-sm: clamp(12px, 0.8vw, 13px);
+  --font-md: clamp(14px, 1vw, 16px);
+  --font-lg: clamp(18px, 1.25vw, 20px);
+  --font-xl: clamp(24px, 1.5vw, 28px);
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  text-transform: uppercase;
+  /* Reference uses mostly uppercase */
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  color: var(--color-white);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Base Background Layer ── */
+.background-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0, 255, 255, 0) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  text-transform: uppercase;
+}
+
+/* ── Accessibility ── */
+:focus-visible {
+  outline: 2px solid var(--color-cyan);
+  outline-offset: 2px;
+}
+
+/* ── Custom Scrollbar ── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-cyan-dim);
+}

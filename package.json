@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "cesium": "^1.139.1",
+    "resium": "^1.19.4",
+    "satellite.js": "^6.0.2"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1"
+  }
+}
