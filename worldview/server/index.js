@@ -7,11 +7,13 @@ import { fileURLToPath } from 'url';
 import WebSocket from 'ws';
 import { BoundedCacheStore } from './store.js';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.join(__dirname, '..');
+
+// Explicitly load .env from worldview directory regardless of process.cwd()
+dotenv.config({ path: path.join(projectRoot, '.env') });
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
