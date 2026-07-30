@@ -12,6 +12,19 @@ Worldview is a real-time 3D geospatial intelligence and situational-awareness pl
 
 ---
 
+## About Worldview
+
+Worldview was created as a high-performance open-source demonstration of real-time geospatial intelligence visualization and defensive AI integration. Inspired by enterprise defense dashboards and operational command centers (such as Palantir Foundry / Gotham UI), Worldview blends raw multi-source telemetry with modern WebGL shader aesthetics and artificial intelligence.
+
+### Key Highlights & Philosophy
+- **Tactical Operational HUD**: Features a circular viewport, scanline CRT effects, thermal FLIR/night-vision shaders, and telemetry HUD overlays.
+- **High-Throughput WebGL Engine**: Engineered using raw CesiumJS `PointPrimitiveCollection` primitives to render hundreds of live flights, satellites, ships, and earthquakes without framerate degradation.
+- **Multi-Domain Data Integration**: Fuses commercial air traffic (OpenSky), space domain awareness (CelesTrak TLE propagation via satellite.js), global maritime tracking (AISStream), and seismic activity (USGS).
+- **AI Crisis Intelligence**: Powered by Google Gemini Pro acting as a tactical crisis analyst to provide concise threat priority assessments.
+- **Production API Security**: Decoupled Express backend proxy architecture protecting API keys, enforcing rate limits, concurrency controls, and LRU data caching.
+
+---
+
 ## Overview
 
 Worldview aggregates multiple real-time and near-real-time global datasets into a unified 3D globe visualization. Designed for performance and visual clarity, the application uses high-throughput WebGL primitive rendering to display hundreds of active flights, satellites, earthquakes, and vessels without framerate degradation.
