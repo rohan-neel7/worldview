@@ -279,15 +279,18 @@ Snapshot:
 
     const getRequestBody = () => JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: 60, temperature: 0.7 }
+      generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
     });
 
     let geminiRes = null;
+    const model1 = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+    const model2 = 'gemini-3.5-flash';
+
     try {
-      // Primary API key call with 8 second upstream timeout
+      // Call primary API key with active model (gemini-flash-latest)
       if (apiKey1) {
         geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey1}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model1}:generateContent?key=${apiKey1}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -297,10 +300,11 @@ Snapshot:
         );
       }
 
-      // Fallback to secondary key if primary failed
-      if ((!geminiRes || !geminiRes.ok) && apiKey2) {
+      // Fallback model/key call if primary returned an error
+      if ((!geminiRes || !geminiRes.ok) && (apiKey1 || apiKey2)) {
+        const key = apiKey2 || apiKey1;
         geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey2}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model2}:generateContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -318,7 +322,7 @@ Snapshot:
     }
 
     const data = await geminiRes.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text).join('').trim();
 
     if (!text) {
       throw new Error('Invalid output format from Gemini');
