@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as Cesium from 'cesium';
 import * as satellite from 'satellite.js';
 import { useWorldView } from '../WorldViewContext';
+import { globalCameraController } from '../engine/camera/CentralizedCameraController.js';
+import { globalProviderManager } from '../engine/lifecycle/ProviderManager.js';
 import { 
   Plane, 
   Ship as ShipIcon, 
@@ -9,7 +11,13 @@ import {
   Activity, 
   X, 
   Navigation,
-  AlertTriangle
+  AlertTriangle,
+  Building2,
+  Anchor,
+  Crosshair,
+  ShieldAlert,
+  Flame,
+  Waves
 } from 'lucide-react';
 
 // ── Visual Preset Shaders ──
@@ -250,6 +258,116 @@ const createShipCanvas = () => {
 
 const SHIP_IMAGE_CANVAS = createShipCanvas();
 
+const createHospitalCanvas = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 40; canvas.height = 40;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.translate(20, 20);
+
+  ctx.fillStyle = 'rgba(20, 0, 5, 0.90)';
+  ctx.strokeStyle = '#FF3333';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.fillStyle = '#FF3333';
+  ctx.fillRect(-3, -10, 6, 20);
+  ctx.fillRect(-10, -3, 20, 6);
+
+  ctx.restore();
+  return canvas;
+};
+
+const HOSPITAL_IMAGE_CANVAS = createHospitalCanvas();
+
+const createAirportCanvas = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 40; canvas.height = 40;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.translate(20, 20);
+
+  ctx.fillStyle = 'rgba(0, 20, 30, 0.90)';
+  ctx.strokeStyle = '#00FFFF';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.fillStyle = '#00FFFF';
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.lineTo(3, -2);
+  ctx.lineTo(10, 2);
+  ctx.lineTo(10, 4);
+  ctx.lineTo(2, 2);
+  ctx.lineTo(1, 8);
+  ctx.lineTo(5, 10);
+  ctx.lineTo(-5, 10);
+  ctx.lineTo(-1, 8);
+  ctx.lineTo(-2, 2);
+  ctx.lineTo(-10, 4);
+  ctx.lineTo(-10, 2);
+  ctx.lineTo(-3, -2);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+  return canvas;
+};
+
+const AIRPORT_IMAGE_CANVAS = createAirportCanvas();
+
+const createPortCanvas = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 40; canvas.height = 40;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.translate(20, 20);
+
+  ctx.fillStyle = 'rgba(0, 20, 30, 0.90)';
+  ctx.strokeStyle = '#4AF0FF';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.strokeStyle = '#4AF0FF';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, -5, 3, 0, Math.PI * 2);
+  ctx.moveTo(0, -2);
+  ctx.lineTo(0, 8);
+  ctx.moveTo(-7, 2);
+  ctx.lineTo(7, 2);
+  ctx.arc(0, 3, 7, 0, Math.PI);
+  ctx.stroke();
+
+  ctx.restore();
+  return canvas;
+};
+
+const PORT_IMAGE_CANVAS = createPortCanvas();
+
+const createEpicenterCanvas = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.translate(32, 32);
+
+  ctx.strokeStyle = 'rgba(255, 50, 50, 0.95)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(0, -28); ctx.lineTo(0, -16);
+  ctx.moveTo(0, 28); ctx.lineTo(0, 16);
+  ctx.moveTo(-28, 0); ctx.lineTo(-16, 0);
+  ctx.moveTo(28, 0); ctx.lineTo(16, 0);
+  ctx.stroke();
+
+  ctx.fillStyle = '#FF2222';
+  ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+  return canvas;
+};
+
+const EPICENTER_IMAGE_CANVAS = createEpicenterCanvas();
+
 // ── Satellite/Orbit Helpers ──
 const extractNoradId = (tle1) => tle1?.substring(2, 7).trim() || 'N/A';
 
@@ -281,8 +399,17 @@ const computeOrbitPath = (tle1, tle2) => {
   return { posProp, length };
 };
 
+const REGION_VIEWS = {
+  GLOBAL: { lon: 20, lat: 20, alt: 25000000 },
+  AMERICAS: { lon: -95, lat: 35, alt: 12000000 },
+  EUROPE: { lon: 15, lat: 51, alt: 6000000 },
+  ASIA_PACIFIC: { lon: 110, lat: 25, alt: 12000000 },
+  MIDDLE_EAST: { lon: 45, lat: 26, alt: 6000000 },
+  AFRICA: { lon: 20, lat: 5, alt: 10000000 },
+};
+
 export default function GlobeViewer({
-  flightData, satelliteData, earthquakeData, shipData,
+  flightData, satelliteData, earthquakeData, shipData, selectedRegion,
   onViewerReady, onCountUpdate, onSatelliteSelect, onFlightSelect
 }) {
   const viewerRef = useRef(null);
@@ -299,7 +426,12 @@ export default function GlobeViewer({
   const shipEntitiesRef = useRef(new Map());
   const postProcessRef = useRef(null);
   const orbitEntitiesRef = useRef([]);
+  const impactEntitiesRef = useRef([]);
+  const crisisEntitiesRef = useRef([]);
+  const assetCollectionRef = useRef(null);
   const trackingActiveRef = useRef(false);
+  const prevCameraRef = useRef(null);
+  const prevModeRef = useRef('WORLD');
 
   const [selectedFlight, setSelectedFlight] = useState(null);
   const [selectedQuake, setSelectedQuake] = useState(null);
@@ -310,7 +442,26 @@ export default function GlobeViewer({
   const [showTerrainLoading, setShowTerrainLoading] = useState(false);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
 
-  const { activePreset, setCameraPosition } = useWorldView();
+  const { 
+    activeMode,
+    isWorldMode,
+    isCrisisMode,
+    activePreset, 
+    setCameraPosition, 
+    operationalMode, 
+    activeIncident, 
+    activeImpactData, 
+    enterIncidentMode, 
+    exitIncidentMode, 
+    selectedAsset, 
+    setSelectedAsset,
+    activeLayers,
+    activeCrises,
+    selectedCrisisId,
+    selectCrisis,
+    clearSelectedCrisis,
+    selectedCountry
+  } = useWorldView();
 
   // ── Helpers ──
   const handleTrack = useCallback((id, isSat = false) => {
@@ -334,15 +485,23 @@ export default function GlobeViewer({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    // Cancel any in-progress camera flight
-    try { viewer.camera.cancelFlight(); } catch(e) {}
+    // Immediately stop worker animation loop from overriding camera POV
+    trackingActiveRef.current = false;
+    trackedRefs.current.trackingActive = false;
+    trackedRefs.current.flight = null;
+    trackedRefs.current.sat = null;
 
-    viewer.trackedEntity = undefined;
+    // Cancel in-progress flights & completely unbind camera reference transform
+    try {
+      viewer.camera.cancelFlight();
+      viewer.trackedEntity = undefined;
+      viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    } catch (e) {}
+
     if (trackerEntityRef.current) {
       trackerEntityRef.current.viewFrom = undefined;
     }
     
-    trackingActiveRef.current = false;
     setTrackedFlightId(null);
     setTrackedSatId(null);
     setSelectedFlight(null);
@@ -353,22 +512,19 @@ export default function GlobeViewer({
     // Clean orbits synchronously
     cleanupOrbits();
     
-    // Fly back to global view
-    setTimeout(() => {
-      if (viewerRef.current && !viewerRef.current.isDestroyed()) {
-        viewerRef.current.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(20, 20, 25000000),
-          orientation: {
-            heading: 0,
-            pitch: Cesium.Math.toRadians(-90),
-            roll: 0
-          },
-          duration: 2.5,
-          easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
-        });
-      }
-    }, 100);
-  }, [cleanupOrbits]);
+    // Smoothly fly back to enlarged globe POV (or active region view)
+    const target = REGION_VIEWS[selectedRegion] || REGION_VIEWS.GLOBAL;
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(target.lon, target.lat, target.alt),
+      orientation: {
+        heading: 0,
+        pitch: Cesium.Math.toRadians(-90),
+        roll: 0
+      },
+      duration: 2.0,
+      easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
+    });
+  }, [cleanupOrbits, selectedRegion]);
 
   const flyTo = useCallback((lon, lat, alt = 500000) => {
     if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
@@ -394,18 +550,12 @@ export default function GlobeViewer({
       lon: p.lon
     });
 
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 25000),
-      orientation: {
-        heading: 0,
-        pitch: Cesium.Math.toRadians(-90),
-        roll: 0.0
-      },
+    globalCameraController.flyToFlightPOV(p, {
       duration: 2.0,
-      complete: () => {
+      onComplete: () => {
         trackingActiveRef.current = true;
         setTrackedFlightId(flightId);
-      }
+      },
     });
   }, []);
 
@@ -427,6 +577,7 @@ export default function GlobeViewer({
       baseLayer: false, imageryProvider: false,
     });
     viewerRef.current = viewer;
+    globalCameraController.setViewer(viewer);
 
     // ═══════════════════════════════════
     // GLOBE LIGHTING AND ATMOSPHERE
@@ -455,14 +606,15 @@ export default function GlobeViewer({
     viewer.scene.fog.density = 0.0002
     viewer.scene.fog.minimumBrightness = 0.03
 
-    // High quality globe rendering
-    viewer.scene.globe.maximumScreenSpaceError = 1
-    viewer.scene.globe.tileCacheSize = 200
-    viewer.scene.globe.preloadAncestors = true
-    viewer.scene.globe.preloadSiblings = true
-    viewer.resolutionScale = 1.0
-    viewer.scene.fxaa = true
-    viewer.scene.postProcessStages.fxaa.enabled = true
+    // High quality balanced globe rendering
+    viewer.scene.globe.maximumScreenSpaceError = 2;
+    viewer.scene.globe.tileCacheSize = 250;
+    viewer.scene.globe.loadingDescendantLimit = 20;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.preloadSiblings = true;
+    viewer.resolutionScale = 1.0;
+    viewer.scene.fxaa = true;
+    viewer.scene.postProcessStages.fxaa.enabled = true;
 
     // Make sure Cesium clock is set to 
     // current real time so sun position 
@@ -487,6 +639,7 @@ export default function GlobeViewer({
     quakeCollectionRef.current = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
     flightPointsRef.current = viewer.scene.primitives.add(new Cesium.BillboardCollection());
     shipCollectionRef.current = viewer.scene.primitives.add(new Cesium.BillboardCollection());
+    assetCollectionRef.current = viewer.scene.primitives.add(new Cesium.BillboardCollection());
 
     trackerEntityRef.current = viewer.entities.add({
       id: 'tracker-entity',
@@ -528,7 +681,6 @@ export default function GlobeViewer({
     };
     viewer.camera.changed.addEventListener(cameraListener);
 
-
     const onMoveEnd = () => {
       const c = viewer.camera.positionCartographic;
       setCameraPosition({ lat: Cesium.Math.toDegrees(c.latitude), lon: Cesium.Math.toDegrees(c.longitude), alt: c.height });
@@ -544,11 +696,33 @@ export default function GlobeViewer({
       const picked = viewer.scene.pick(click.position);
       
       if (!Cesium.defined(picked)) {
-        setSelectedFlight(null); setSelectedQuake(null); setSelectedSatellite(null); setSelectedShip(null);
+        setSelectedFlight(null); setSelectedQuake(null); setSelectedSatellite(null); setSelectedShip(null); setSelectedAsset?.(null);
         handleStopTracking(); return;
       }
 
-      // 1. Flight Primitive
+      // 0. Spatial Crisis Circle Marker (POV pointing at crisis radius)
+      if (picked.id?._crisisData || picked.primitive?._crisisData) {
+        const crisis = picked.id?._crisisData || picked.primitive?._crisisData;
+        selectCrisis(crisis);
+        globalCameraController.flyToCrisisRadius(crisis);
+        setSelectedFlight(null); setSelectedQuake(null); setSelectedSatellite(null); setSelectedShip(null);
+        return;
+      }
+
+      // 1. Exposed Infrastructure Asset Primitive (Hospital / Airport / Port / Epicenter)
+      if (picked.primitive?._assetData) {
+        const asset = picked.primitive._assetData;
+        const type = picked.primitive._assetType;
+        if (setSelectedAsset) {
+          setSelectedAsset({ ...asset, assetType: type });
+        }
+        globalCameraController.flyToAsset(asset, asset.lon, 35000);
+        setSelectedFlight(null); setSelectedQuake(null); setSelectedSatellite(null); setSelectedShip(null);
+        setPopupPos({ x: click.position.x, y: click.position.y });
+        return;
+      }
+
+      // 2. Flight Primitive (POV pointing at flight radius)
       if (picked.primitive?._flightData) {
         const p = picked.primitive._flightData;
         const flightId = p.icao24 || p.id;
@@ -565,17 +739,10 @@ export default function GlobeViewer({
         });
         setPopupPos({ x: click.position.x, y: click.position.y });
 
-        // STEP 1 — Fly camera down to aircraft (top-down 2D):
-        viewerRef.current.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 25000),
-          orientation: {
-            heading: 0,
-            pitch: Cesium.Math.toRadians(-90),
-            roll: 0.0
-          },
+        // Point POV camera directly at aircraft and its operational flight radius
+        globalCameraController.flyToFlightPOV(p, {
           duration: 2.0,
-          complete: () => {
-            // Don't use trackedEntity — we manually drive the camera in the interval
+          onComplete: () => {
             trackingActiveRef.current = true;
             setTrackedFlightId(flightId);
           }
@@ -583,16 +750,39 @@ export default function GlobeViewer({
         return;
       }
 
-      // 2. Earthquake Primitive
+      // 3. Earthquake Primitive (POV pointing at seismic radius)
       if (picked.primitive?._quakeData) {
         const q = picked.primitive._quakeData;
-        viewerRef.current.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(q.lon, q.lat, 2000000),
-          duration: 2.0
+        
+        // Capture previous camera position for clean Return to World
+        const c = viewer.camera.positionCartographic;
+        if (c) {
+          prevCameraRef.current = {
+            lon: Cesium.Math.toDegrees(c.longitude),
+            lat: Cesium.Math.toDegrees(c.latitude),
+            alt: c.height,
+            heading: viewer.camera.heading,
+            pitch: viewer.camera.pitch,
+          };
+        }
+
+        // Point POV camera directly at earthquake epicenter and its shaking radius
+        globalCameraController.flyToCrisisRadius({
+          lat: q.lat || q.latitude,
+          lon: q.lon || q.longitude,
+          magnitude: q.magnitude || q.mag || 5.0,
+          place: q.place,
         });
-        setSelectedQuake(q);
-        setSelectedFlight(null); setSelectedSatellite(null);
-        setPopupPos({ x: click.position.x, y: click.position.y });
+
+        // Enter Incident Command Mode
+        if (enterIncidentMode) {
+          enterIncidentMode(q.id ? `hyp-earthquake-usgs_${q.id}` : q);
+        }
+
+        setSelectedQuake(null);
+        setSelectedFlight(null); 
+        setSelectedSatellite(null);
+        setSelectedShip(null);
         return;
       }
 
@@ -792,9 +982,9 @@ export default function GlobeViewer({
           const drLat = buffer[offset++];
           const drLon = buffer[offset++];
           
-          if (entry && drLat && drLon) {
-            const altMeters = Math.max(entry.point._flightData?.altitude || entry.point._flightData?.alt || 10000, 3000);
-            entry.point.position = Cesium.Cartesian3.fromDegrees(drLon, drLat, altMeters);
+          if (entry && (x !== 0 || y !== 0 || z !== 0)) {
+            // In-place vector update with zero garbage collection overhead
+            Cesium.Cartesian3.fromElements(x, y, z, entry.point.position);
             entry.point._drLat = drLat;
             entry.point._drLon = drLon;
             
@@ -824,7 +1014,8 @@ export default function GlobeViewer({
           const lon = buffer[offset++];
           
           if (entry && (x !== 0 || y !== 0 || z !== 0)) {
-            entry.point.position = new Cesium.Cartesian3(x, y, z);
+            // In-place vector update with zero garbage collection overhead
+            Cesium.Cartesian3.fromElements(x, y, z, entry.point.position);
             
             if (id === trackedRefs.current.sat) {
               if (trackerEntityRef.current) {
@@ -862,26 +1053,28 @@ export default function GlobeViewer({
     }
   }, [satelliteData]);
 
-  // STEP 4 — Visual Pulse Update Loop (Main Thread)
+  // ── Optimized Visual Pulse Loop (Throttled, Zero Allocations) ──
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    const onPreUpdate = (scene, time) => {
+    let lastPulse = 0;
+    const onPreUpdate = () => {
       const nowTime = Date.now();
-      
-      // Earthquake Pulse
-      if (quakeCollectionRef.current) {
-        const t = nowTime / 800.0;
-        const pulse = (Math.sin(t) + 1) / 2;
+      if (nowTime - lastPulse < 100) return; // 10 FPS throttle for point buffer updates
+      lastPulse = nowTime;
 
-        for (let i = 0; i < quakeCollectionRef.current.length; ++i) {
+      // Pulse top earthquakes
+      if (quakeCollectionRef.current && quakeCollectionRef.current.length > 0) {
+        const t = nowTime / 600.0;
+        const pulse = (Math.sin(t) + 1) * 0.5;
+        const count = Math.min(quakeCollectionRef.current.length, 12);
+
+        for (let i = 0; i < count; ++i) {
           const p = quakeCollectionRef.current.get(i);
-          if (p._quakeData) {
+          if (p && p._quakeData) {
             const baseSize = Math.max((p._quakeData.magnitude || 4) * 3, 6);
-            p.pixelSize = baseSize + (pulse * baseSize * 0.4);
-            p.color = Cesium.Color.RED.withAlpha(0.7 - (pulse * 0.5));
-            p.outlineColor = Cesium.Color.WHITE.withAlpha(0.5 - (pulse * 0.3));
+            p.pixelSize = baseSize + (pulse * 3.5);
           }
         }
       }
@@ -941,12 +1134,22 @@ export default function GlobeViewer({
     const coll = quakeCollectionRef.current;
     if (!coll || !earthquakeData) return;
     coll.removeAll();
+
     earthquakeData.forEach(q => {
+      const mag = q.magnitude || 4;
+      const baseSize = Math.max(mag * 3.2, 6);
+      const color = mag >= 5.5
+        ? Cesium.Color.RED.withAlpha(0.85)
+        : mag >= 4.5
+        ? Cesium.Color.fromCssColorString('#FF9900').withAlpha(0.8)
+        : Cesium.Color.fromCssColorString('#FFCC00').withAlpha(0.7);
+
       const p = coll.add({
         position: Cesium.Cartesian3.fromDegrees(q.lon, q.lat),
-        pixelSize: Math.max((q.magnitude || 4) * 3, 6),
-        color: Cesium.Color.RED.withAlpha(0.6),
-        outlineColor: Cesium.Color.WHITE.withAlpha(0.4), outlineWidth: 1
+        pixelSize: baseSize,
+        color: color,
+        outlineColor: Cesium.Color.WHITE.withAlpha(0.6),
+        outlineWidth: 1.5
       });
       p._quakeData = q;
     });
@@ -1008,6 +1211,326 @@ export default function GlobeViewer({
       }));
     }
   }, [activePreset]);
+
+  // ── Incident Mode: Impact Isoseismals & Exposed Assets ──
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    // Clean up previous impact entities and asset primitives
+    if (impactEntitiesRef.current && impactEntitiesRef.current.length > 0) {
+      impactEntitiesRef.current.forEach((entity) => {
+        try { viewer.entities.remove(entity); } catch (_e) {}
+      });
+      impactEntitiesRef.current = [];
+    }
+
+    if (assetCollectionRef.current) {
+      assetCollectionRef.current.removeAll();
+    }
+
+    if (operationalMode !== 'INCIDENT' || !activeImpactData || !activeIncident) {
+      return;
+    }
+
+    const { epicenter, shakingZones, exposedAssets, magnitude } = activeImpactData;
+    if (!epicenter || !shakingZones) return;
+
+    const lat = epicenter.lat;
+    const lon = epicenter.lon;
+
+    // 1. Shaking Isoseismal Rings (Estimated Impact Zones)
+    if (activeLayers?.impactZones !== false) {
+      // Light Shaking Perimeter (MMI III-IV)
+      if (shakingZones.lightRadiusKm > 0) {
+        const lightEntity = viewer.entities.add({
+          name: 'ESTIMATED LIGHT SHAKING PERIMETER',
+          position: Cesium.Cartesian3.fromDegrees(lon, lat),
+          ellipse: {
+            semiMinorAxis: shakingZones.lightRadiusKm * 1000,
+            semiMajorAxis: shakingZones.lightRadiusKm * 1000,
+            material: Cesium.Color.fromCssColorString('#00FFFF').withAlpha(0.04),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString('#00FFFF').withAlpha(0.45),
+            outlineWidth: 1.5,
+            height: 10,
+          },
+        });
+        impactEntitiesRef.current.push(lightEntity);
+      }
+
+      // Moderate Shaking Perimeter (MMI V-VI)
+      if (shakingZones.moderateRadiusKm > 0) {
+        const modEntity = viewer.entities.add({
+          name: 'ESTIMATED MODERATE SHAKING ZONE',
+          position: Cesium.Cartesian3.fromDegrees(lon, lat),
+          ellipse: {
+            semiMinorAxis: shakingZones.moderateRadiusKm * 1000,
+            semiMajorAxis: shakingZones.moderateRadiusKm * 1000,
+            material: Cesium.Color.fromCssColorString('#FF9900').withAlpha(0.08),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString('#FF9900').withAlpha(0.75),
+            outlineWidth: 2.0,
+            height: 20,
+          },
+        });
+        impactEntitiesRef.current.push(modEntity);
+      }
+
+      // Severe Shaking Perimeter (MMI VII+)
+      if (shakingZones.severeRadiusKm > 0) {
+        const severeEntity = viewer.entities.add({
+          name: 'ESTIMATED SEVERE SHAKING CORE',
+          position: Cesium.Cartesian3.fromDegrees(lon, lat),
+          ellipse: {
+            semiMinorAxis: shakingZones.severeRadiusKm * 1000,
+            semiMajorAxis: shakingZones.severeRadiusKm * 1000,
+            material: Cesium.Color.RED.withAlpha(0.16),
+            outline: true,
+            outlineColor: Cesium.Color.RED.withAlpha(0.90),
+            outlineWidth: 2.5,
+            height: 30,
+          },
+        });
+        impactEntitiesRef.current.push(severeEntity);
+      }
+    }
+
+    // 2. Exposed Critical Infrastructure Assets
+    if (activeLayers?.exposedAssets !== false && assetCollectionRef.current) {
+      // Healthcare Facilities
+      (exposedAssets?.hospitals || []).forEach((hosp) => {
+        const b = assetCollectionRef.current.add({
+          position: Cesium.Cartesian3.fromDegrees(hosp.lon, hosp.lat, 30),
+          image: HOSPITAL_IMAGE_CANVAS,
+          width: 32,
+          height: 32,
+          scaleByDistance: new Cesium.NearFarScalar(50000, 1.2, 3000000, 0.55),
+          eyeOffset: new Cesium.Cartesian3(0, 0, -20),
+        });
+        b._assetData = hosp;
+        b._assetType = 'HOSPITAL';
+      });
+
+      // Aviation Runways
+      (exposedAssets?.airports || []).forEach((apt) => {
+        const b = assetCollectionRef.current.add({
+          position: Cesium.Cartesian3.fromDegrees(apt.lon, apt.lat, 30),
+          image: AIRPORT_IMAGE_CANVAS,
+          width: 32,
+          height: 32,
+          scaleByDistance: new Cesium.NearFarScalar(50000, 1.2, 3000000, 0.55),
+          eyeOffset: new Cesium.Cartesian3(0, 0, -20),
+        });
+        b._assetData = apt;
+        b._assetType = 'AIRPORT';
+      });
+
+      // Maritime Ports
+      (exposedAssets?.ports || []).forEach((prt) => {
+        const b = assetCollectionRef.current.add({
+          position: Cesium.Cartesian3.fromDegrees(prt.lon, prt.lat, 30),
+          image: PORT_IMAGE_CANVAS,
+          width: 32,
+          height: 32,
+          scaleByDistance: new Cesium.NearFarScalar(50000, 1.2, 3000000, 0.55),
+          eyeOffset: new Cesium.Cartesian3(0, 0, -20),
+        });
+        b._assetData = prt;
+        b._assetType = 'PORT';
+      });
+
+      // Epicenter Target Beacon
+      const epic = assetCollectionRef.current.add({
+        position: Cesium.Cartesian3.fromDegrees(lon, lat, 60),
+        image: EPICENTER_IMAGE_CANVAS,
+        width: 48,
+        height: 48,
+        eyeOffset: new Cesium.Cartesian3(0, 0, -50),
+      });
+      epic._assetData = {
+        name: activeIncident.title,
+        lat,
+        lon,
+        magnitude: magnitude || 5.0,
+        depthKm: activeIncident.location?.depthKm || 10,
+        status: activeIncident.status,
+      };
+      epic._assetType = 'EPICENTER';
+    }
+
+    // 3. Smooth Camera Redirection to Epicenter with Tactical Pitch
+    const radiusKm = shakingZones.moderateRadiusKm || 60;
+    const targetAlt = Math.max(280000, Math.min(1000000, radiusKm * 4500));
+
+    try {
+      viewer.camera.cancelFlight();
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, targetAlt),
+        orientation: {
+          heading: 0,
+          pitch: Cesium.Math.toRadians(-55),
+          roll: 0.0,
+        },
+        duration: 2.2,
+        easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+      });
+    } catch (_err) {}
+
+    return () => {
+      if (impactEntitiesRef.current && impactEntitiesRef.current.length > 0) {
+        impactEntitiesRef.current.forEach((entity) => {
+          try { viewer.entities.remove(entity); } catch (_e) {}
+        });
+        impactEntitiesRef.current = [];
+      }
+      if (assetCollectionRef.current) {
+        assetCollectionRef.current.removeAll();
+      }
+    };
+  }, [operationalMode, activeIncident, activeImpactData, activeLayers]);
+
+  // ── Transition: Return to World Mode Camera Flight ──
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    if (prevModeRef.current === 'INCIDENT' && operationalMode === 'WORLD') {
+      const target = REGION_VIEWS[selectedRegion] || REGION_VIEWS.GLOBAL;
+      const dest = prevCameraRef.current
+        ? Cesium.Cartesian3.fromDegrees(prevCameraRef.current.lon, prevCameraRef.current.lat, prevCameraRef.current.alt)
+        : Cesium.Cartesian3.fromDegrees(target.lon, target.lat, target.alt);
+      
+      const pitch = prevCameraRef.current?.pitch || Cesium.Math.toRadians(-90);
+      const heading = prevCameraRef.current?.heading || 0;
+
+      try {
+        viewer.camera.cancelFlight();
+        viewer.camera.flyTo({
+          destination: dest,
+          orientation: {
+            heading,
+            pitch,
+            roll: 0.0,
+          },
+          duration: 2.0,
+          easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+        });
+      } catch (_e) {
+        console.debug('Return flight interrupted:', _e);
+      }
+    }
+    prevModeRef.current = operationalMode;
+  }, [operationalMode, selectedRegion]);
+
+  // ── Crisis Mode: Spatial Crisis Markers (Circles) & Country Bounds ──
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    // Clean up previous crisis entities
+    if (crisisEntitiesRef.current && crisisEntitiesRef.current.length > 0) {
+      crisisEntitiesRef.current.forEach((entity) => {
+        try { viewer.entities.remove(entity); } catch (_e) {}
+      });
+      crisisEntitiesRef.current = [];
+    }
+
+    if (isCrisisMode && activeLayers?.crisisCircles !== false && Array.isArray(activeCrises)) {
+      activeCrises.forEach((crisis) => {
+        if (!crisis.location?.lat || !crisis.location?.lon) return;
+        const lat = crisis.location.lat;
+        const lon = crisis.location.lon;
+        const sev = crisis.severity || 'HIGH';
+        const isSelected = crisis.id === selectedCrisisId;
+
+        // Radius scaled by severity
+        const radiusMeters = 
+          sev === 'CRITICAL' ? 70000 :
+          sev === 'HIGH' ? 45000 :
+          sev === 'MODERATE' ? 30000 : 18000;
+
+        const baseColorHex =
+          sev === 'CRITICAL' ? '#FF3333' :
+          sev === 'HIGH' ? '#FF9900' :
+          sev === 'MODERATE' ? '#FFD700' : '#00FFFF';
+
+        const alpha = isSelected ? 0.32 : 0.16;
+        const outlineAlpha = isSelected ? 0.95 : 0.70;
+
+        const circleEntity = viewer.entities.add({
+          name: crisis.title,
+          position: Cesium.Cartesian3.fromDegrees(lon, lat),
+          ellipse: {
+            semiMinorAxis: radiusMeters,
+            semiMajorAxis: radiusMeters,
+            material: Cesium.Color.fromCssColorString(baseColorHex).withAlpha(alpha),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString(baseColorHex).withAlpha(outlineAlpha),
+            outlineWidth: isSelected ? 3.0 : 2.0,
+            height: 15,
+          },
+        });
+
+        // Store crisis data on entity for click picking
+        circleEntity._crisisData = crisis;
+        crisisEntitiesRef.current.push(circleEntity);
+      });
+    }
+
+    return () => {
+      if (crisisEntitiesRef.current && crisisEntitiesRef.current.length > 0) {
+        crisisEntitiesRef.current.forEach((entity) => {
+          try { viewer.entities.remove(entity); } catch (_e) {}
+        });
+        crisisEntitiesRef.current = [];
+      }
+    };
+  }, [isCrisisMode, activeCrises, selectedCrisisId, activeLayers]);
+
+  // ── Mode-Based Primitive Collection Visibility & Suspension ──
+  useEffect(() => {
+    const isCrisis = isCrisisMode;
+
+    if (flightPointsRef.current) {
+      flightPointsRef.current.show = !isCrisis && activeLayers?.flights !== false;
+    }
+    if (satCollectionRef.current) {
+      satCollectionRef.current.show = !isCrisis && activeLayers?.satellites !== false;
+    }
+    if (shipCollectionRef.current) {
+      shipCollectionRef.current.show = !isCrisis && activeLayers?.ships !== false;
+    }
+    if (quakeCollectionRef.current) {
+      quakeCollectionRef.current.show = activeLayers?.earthquakes !== false;
+    }
+  }, [isCrisisMode, activeLayers]);
+
+  // ── Incident Mode: Live Feed Opacity Modulation (Subtle prominence) ──
+  useEffect(() => {
+    const isIncident = operationalMode === 'INCIDENT';
+    const satAlpha = isIncident ? 0.50 : 1.0;
+    const flightAlpha = isIncident ? 0.40 : 1.0;
+    const shipAlpha = isIncident ? 0.35 : 1.0;
+
+    satEntitiesRef.current.forEach((val) => {
+      if (val.point) {
+        val.point.color = new Cesium.Color(1, 1, 1, satAlpha);
+      }
+    });
+
+    flightEntitiesRef.current.forEach((val) => {
+      if (val.point) {
+        val.point.color = new Cesium.Color(1, 1, 1, flightAlpha);
+      }
+    });
+
+    shipEntitiesRef.current.forEach((val) => {
+      if (val.point) {
+        val.point.color = new Cesium.Color(1, 1, 1, shipAlpha);
+      }
+    });
+  }, [operationalMode]);
 
   return (
     <>
@@ -1120,7 +1643,7 @@ export default function GlobeViewer({
             </div>
             <div className="flight-hud-field">
               <span className="flight-hud-label">MAGNITUDE</span>
-              <span className="flight-hud-value" style={{ fontSize: '24px' }}>{selectedQuake.magnitude.toFixed(1)}</span>
+              <span className="flight-hud-value" style={{ fontSize: '24px' }}>{selectedQuake.magnitude?.toFixed(1) || selectedQuake.mag?.toFixed(1)}</span>
             </div>
           </div>
 
@@ -1129,17 +1652,30 @@ export default function GlobeViewer({
           <div className="flight-hud-coords">
             <div className="flight-hud-coord-row">
               <span className="flight-hud-label">LAT</span>
-              <span className="flight-hud-coord-value" style={{ color: 'var(--color-red)' }}>{selectedQuake.lat.toFixed(4)}</span>
+              <span className="flight-hud-coord-value" style={{ color: 'var(--color-red)' }}>{selectedQuake.lat?.toFixed(4)}</span>
             </div>
             <div className="flight-hud-coord-row">
               <span className="flight-hud-label">LON</span>
-              <span className="flight-hud-coord-value" style={{ color: 'var(--color-red)' }}>{selectedQuake.lon.toFixed(4)}</span>
+              <span className="flight-hud-coord-value" style={{ color: 'var(--color-red)' }}>{selectedQuake.lon?.toFixed(4)}</span>
             </div>
           </div>
 
           <div className="flight-hud-divider" style={{ background: 'linear-gradient(90deg, transparent, rgba(255, 50, 50, 0.25), transparent)' }} />
 
-          <div className="flight-hud-actions">
+          <div className="flight-hud-actions" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <button
+              className="flight-hud-track-btn"
+              style={{ borderColor: 'var(--color-red)', color: 'var(--color-white)', background: 'rgba(255, 50, 50, 0.25)' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (enterIncidentMode) {
+                  enterIncidentMode(`hyp-earthquake-usgs_${selectedQuake.id}`);
+                  setSelectedQuake(null);
+                }
+              }}
+            >
+              <ShieldAlert size={14} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> ENTER INCIDENT COMMAND
+            </button>
             <button
               className="flight-hud-exit-btn"
               onClick={(e) => {
@@ -1148,6 +1684,84 @@ export default function GlobeViewer({
               }}
             >
               <X size={14} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> CLOSE
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selectedAsset && (
+        <div className="asset-hud-card">
+          <div className="flight-hud-header">
+            <div className="flight-hud-icon" style={{ 
+              color: selectedAsset.assetType === 'HOSPITAL' ? '#FF3333' : 
+                     selectedAsset.assetType === 'AIRPORT' ? 'var(--color-cyan)' : '#4AF0FF' 
+            }}>
+              {selectedAsset.assetType === 'HOSPITAL' ? <Building2 size={24} /> :
+               selectedAsset.assetType === 'AIRPORT' ? <Plane size={24} /> : <Anchor size={24} />}
+            </div>
+            <div className="flight-hud-title">
+              <div className="flight-hud-callsign" style={{ fontSize: '12px' }}>{selectedAsset.name}</div>
+              <div className="flight-hud-icao">TYPE: {selectedAsset.category || selectedAsset.capability || selectedAsset.assetType}</div>
+            </div>
+            <div className="flight-hud-live-badge" style={{ 
+              borderColor: selectedAsset.intensityBand === 'SEVERE' ? 'var(--color-red)' : 'var(--color-amber)', 
+              color: selectedAsset.intensityBand === 'SEVERE' ? 'var(--color-red)' : 'var(--color-amber)' 
+            }}>
+              {selectedAsset.intensityBand || 'EXPOSED'}
+            </div>
+          </div>
+
+          <div className="flight-hud-divider" />
+
+          <div className="flight-hud-grid">
+            <div className="flight-hud-field">
+              <span className="flight-hud-label">DIST TO EPICENTER</span>
+              <span className="flight-hud-value">{selectedAsset.distanceKm || 0}<span className="flight-hud-unit">km</span></span>
+            </div>
+            <div className="flight-hud-field">
+              <span className="flight-hud-label">EXPOSURE STATUS</span>
+              <span className="flight-hud-value" style={{ fontSize: '11px', color: 'var(--color-amber)' }}>
+                POTENTIAL EXPOSURE
+              </span>
+            </div>
+            {selectedAsset.beds && (
+              <div className="flight-hud-field">
+                <span className="flight-hud-label">CAPACITY</span>
+                <span className="flight-hud-value">{selectedAsset.beds} BEDS</span>
+              </div>
+            )}
+            {selectedAsset.runwayLengthM && (
+              <div className="flight-hud-field">
+                <span className="flight-hud-label">RUNWAY</span>
+                <span className="flight-hud-value">{selectedAsset.runwayLengthM}m</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flight-hud-divider" />
+
+          <div className="flight-hud-coords">
+            <div className="flight-hud-coord-row">
+              <span className="flight-hud-label">LAT</span>
+              <span className="flight-hud-coord-value">{selectedAsset.lat?.toFixed(4)}</span>
+            </div>
+            <div className="flight-hud-coord-row">
+              <span className="flight-hud-label">LON</span>
+              <span className="flight-hud-coord-value">{selectedAsset.lon?.toFixed(4)}</span>
+            </div>
+          </div>
+
+          <div className="flight-hud-divider" />
+
+          <div className="flight-hud-actions">
+            <button
+              className="flight-hud-exit-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAsset(null);
+              }}
+            >
+              <X size={14} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> CLOSE ASSET INSPECTOR
             </button>
           </div>
         </div>

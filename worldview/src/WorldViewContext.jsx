@@ -1,4 +1,9 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { EarthquakeImpactEngine } from './engine/impact/EarthquakeImpactEngine.js';
+import { globalProviderManager, WorkloadCategory } from './engine/lifecycle/ProviderManager.js';
+import { globalCameraController } from './engine/camera/CentralizedCameraController.js';
+import { CrisisDiscoveryEngine } from './engine/discovery/CrisisDiscoveryEngine.js';
+import { COUNTRIES, getCountryById } from './data/countries.js';
 
 const WorldViewContext = createContext(null);
 
@@ -9,6 +14,9 @@ const DEFAULT_LAYERS = {
   satellites: true,
   ships: true,
   weather: false,
+  impactZones: true,
+  exposedAssets: true,
+  crisisCircles: true,
 };
 
 const LAYER_META = {
@@ -18,10 +26,13 @@ const LAYER_META = {
   satellites: { label: 'Satellites', source: 'CelesTrak', interval: '30s' },
   ships: { label: 'Ships (AIS)', source: 'AISstream', interval: 'live' },
   weather: { label: 'Weather Radar', source: 'NOAA', interval: '5min' },
+  impactZones: { label: 'Impact Zones', source: 'Seismo-Engine', interval: 'live' },
+  exposedAssets: { label: 'Exposed Assets', source: 'OSM / UN Data', interval: 'static' },
+  crisisCircles: { label: 'Crisis Circles', source: 'WorldView Fusion', interval: 'live' },
 };
 
 export const REGIONS = {
-  GLOBAL: { name: 'Global', lat: 30, lon: 0, dist: 9999 },
+  GLOBAL: { name: 'Global', lat: 20, lon: 20, dist: 9999 },
   AMERICAS: { name: 'Americas', lat: 35, lon: -95, dist: 4000 },
   EUROPE: { name: 'Europe', lat: 51, lon: 15, dist: 2500 },
   ASIA_PACIFIC: { name: 'Asia-Pacific', lat: 25, lon: 110, dist: 4000 },
@@ -32,46 +43,187 @@ export const REGIONS = {
 const PRESETS = ['NORMAL', 'CRT', 'NVG', 'FLIR', 'NOIR', 'SNOW'];
 
 export function WorldViewProvider({ children }) {
-  // Layer toggles
+  // ═════════════════════════════════════════════════════════════════
+  // 1. PRIMARY OPERATING MODE ARCHITECTURE: WORLD ⟷ CRISIS
+  // ═════════════════════════════════════════════════════════════════
+  const [activeMode, setActiveModeState] = useState('WORLD'); // 'WORLD' | 'CRISIS'
+
+  const setActiveMode = useCallback((nextMode) => {
+    if (nextMode !== 'WORLD' && nextMode !== 'CRISIS') return;
+    setActiveModeState(nextMode);
+    globalProviderManager.setMode(nextMode);
+
+    if (nextMode === 'WORLD') {
+      globalCameraController.flyToGlobal();
+    }
+  }, []);
+
+  // ═════════════════════════════════════════════════════════════════
+  // 2. CRISIS INTELLIGENCE: COUNTRY THEATER & ACTIVE CRISES
+  // ═════════════════════════════════════════════════════════════════
+  const [selectedCountryId, setSelectedCountryIdState] = useState('IN');
+  const [crisisFilter, setCrisisFilter] = useState('ALL'); // 'ALL' | 'CRITICAL' | 'HIGH' | 'SEISMIC' | 'FLOOD'
+  const [selectedCrisisId, setSelectedCrisisId] = useState(null);
+  const [aiSummaryMode, setAiSummaryMode] = useState('PUBLIC'); // 'PUBLIC' | 'AUTHORITY'
+  const [selectedAsset, setSelectedAsset] = useState(null);
+
+  const selectedCountry = useMemo(() => {
+    return getCountryById(selectedCountryId);
+  }, [selectedCountryId]);
+
+  const setSelectedCountryId = useCallback((cId) => {
+    setSelectedCountryIdState(cId);
+    setSelectedCrisisId(null);
+    setSelectedAsset(null);
+    const country = getCountryById(cId);
+    globalCameraController.flyToCountry(country);
+  }, []);
+
+  // ═════════════════════════════════════════════════════════════════
+  // 3. LAYER TOGGLES & VISUAL PRESETS
+  // ═════════════════════════════════════════════════════════════════
   const [activeLayers, setActiveLayers] = useState(DEFAULT_LAYERS);
   const toggleLayer = useCallback((layerId) => {
     setActiveLayers((prev) => ({ ...prev, [layerId]: !prev[layerId] }));
   }, []);
 
-  // Visual preset
   const [activePreset, setActivePreset] = useState('NORMAL');
 
-  // Data counts (updated by hooks)
+  // ═════════════════════════════════════════════════════════════════
+  // 4. DATA TELEMETRY (COUNTS & STATUS)
+  // ═════════════════════════════════════════════════════════════════
   const [flightCount, setFlightCount] = useState(0);
   const [satelliteCount, setSatelliteCount] = useState(0);
   const [earthquakeCount, setEarthquakeCount] = useState(0);
   const [shipCount, setShipCount] = useState(0);
 
-  // Region filtering
   const [selectedRegion, setSelectedRegion] = useState('GLOBAL');
   const [regionStats, setRegionStats] = useState({ flights: 0, quakes: 0, sats: 0, ships: 0 });
 
-  // Summaries
   const [weatherSummary, setWeatherSummary] = useState('NO DATA');
   const [trafficLevel, setTrafficLevel] = useState('UNKNOWN');
-
-  // Gemini analysis
   const [geminiOutput, setGeminiOutput] = useState(null);
-
-  // HUD Visibility
   const [showHUD, setShowHUD] = useState(true);
-
-  // Layout mode (Tactical / Minimal / Scientific)
   const [layout, setLayout] = useState('Tactical');
 
-  // Camera state (updated by GlobeViewer)
+  // Camera telemetry state (updated throttled on moveEnd)
   const [cameraPosition, setCameraPosition] = useState({
-    lat: 0,
-    lon: 0,
-    alt: 15000000,
+    lat: 20,
+    lon: 20,
+    alt: 22000000,
   });
 
+  // Pipeline Metrics & Incidents
+  const [incidents, setIncidents] = useState([]);
+  const [pipelineMetrics, setPipelineMetrics] = useState({
+    totalIngested: 0,
+    liveCount: 0,
+    simulatedCount: 0,
+    activeEventsInStore: 0,
+    activeIncidents: 0,
+    lastProcessedAt: null,
+  });
+  const [simulationStatus, setSimulationStatus] = useState({
+    active: false,
+    completed: false,
+    scenarioName: null,
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // 5. CRISIS DISCOVERY & IMPACT EVALUATION
+  // ═════════════════════════════════════════════════════════════════
+  // Discovered crises for the currently selected country
+  const [discoveredCrises, setDiscoveredCrises] = useState([]);
+
+  // Runs discovery whenever selectedCountry, incidents, or live earthquakes change
+  const refreshCrisisDiscovery = useCallback((liveQuakes = []) => {
+    const res = CrisisDiscoveryEngine.discover(selectedCountry, liveQuakes);
+    setDiscoveredCrises(res.activeCrises || []);
+  }, [selectedCountry]);
+
+  // Filtered crises based on crisisFilter
+  const activeCrises = useMemo(() => {
+    if (crisisFilter === 'ALL') return discoveredCrises;
+    if (crisisFilter === 'CRITICAL') return discoveredCrises.filter((c) => c.severity === 'CRITICAL');
+    if (crisisFilter === 'HIGH') return discoveredCrises.filter((c) => c.severity === 'HIGH');
+    if (crisisFilter === 'SEISMIC') return discoveredCrises.filter((c) => c.type === 'EARTHQUAKE');
+    if (crisisFilter === 'FLOOD') return discoveredCrises.filter((c) => c.type === 'FLOOD' || c.type === 'CYCLONE');
+    return discoveredCrises;
+  }, [discoveredCrises, crisisFilter]);
+
+  // Resolves the currently selected crisis object
+  const selectedCrisis = useMemo(() => {
+    if (!selectedCrisisId || discoveredCrises.length === 0) return null;
+    return discoveredCrises.find((c) => c.id === selectedCrisisId) || null;
+  }, [selectedCrisisId, discoveredCrises]);
+
+  // Resolves or computes active impact data for selected crisis
+  const activeImpactData = useMemo(() => {
+    if (selectedCrisis?.impactData) {
+      return selectedCrisis.impactData;
+    }
+    if (selectedCrisis?.location) {
+      return EarthquakeImpactEngine.evaluate({
+        magnitude: selectedCrisis.magnitude || selectedCrisis.metrics?.magnitude || 5.5,
+        depthKm: selectedCrisis.location.depthKm || 10,
+        lat: selectedCrisis.location.lat,
+        lon: selectedCrisis.location.lon,
+        place: selectedCrisis.location.name,
+      });
+    }
+    return null;
+  }, [selectedCrisis]);
+
+  // Select a specific crisis and trigger focus
+  const selectCrisis = useCallback((crisisOrId) => {
+    const cId = typeof crisisOrId === 'string' ? crisisOrId : crisisOrId?.id;
+    if (!cId) return;
+    setSelectedCrisisId(cId);
+    setSelectedAsset(null);
+    setActiveModeState('CRISIS');
+
+    const targetCrisis = discoveredCrises.find((c) => c.id === cId);
+    if (targetCrisis?.location) {
+      globalCameraController.flyToCrisisRadius(targetCrisis);
+    }
+  }, [discoveredCrises]);
+
+  const clearSelectedCrisis = useCallback(() => {
+    setSelectedCrisisId(null);
+    setSelectedAsset(null);
+    globalCameraController.returnToCountry(selectedCountry);
+  }, [selectedCountry]);
+
+  // Legacy mappings for backward compatibility
+  const operationalMode = activeMode === 'CRISIS' && selectedCrisisId ? 'INCIDENT' : activeMode;
+  const activeIncident = selectedCrisis;
+  const enterIncidentMode = selectCrisis;
+  const exitIncidentMode = clearSelectedCrisis;
+
   const value = {
+    // Mode Management (Phase 4)
+    activeMode,
+    setActiveMode,
+    isWorldMode: activeMode === 'WORLD',
+    isCrisisMode: activeMode === 'CRISIS',
+
+    // Country Theater & Crisis Discovery
+    COUNTRIES,
+    selectedCountryId,
+    selectedCountry,
+    setSelectedCountryId,
+    crisisFilter,
+    setCrisisFilter,
+    discoveredCrises,
+    activeCrises,
+    refreshCrisisDiscovery,
+    selectedCrisisId,
+    selectedCrisis,
+    selectCrisis,
+    clearSelectedCrisis,
+    aiSummaryMode,
+    setAiSummaryMode,
+
     // Layers
     activeLayers,
     toggleLayer,
@@ -105,8 +257,6 @@ export function WorldViewProvider({ children }) {
     // HUD
     showHUD,
     setShowHUD,
-
-    // Layout
     layout,
     setLayout,
 
@@ -120,6 +270,24 @@ export function WorldViewProvider({ children }) {
     regionStats,
     setRegionStats,
     REGIONS,
+
+    // Pipeline
+    incidents,
+    setIncidents,
+    pipelineMetrics,
+    setPipelineMetrics,
+    simulationStatus,
+    setSimulationStatus,
+
+    // Backward-compatible Incident API
+    operationalMode,
+    activeIncidentId: selectedCrisisId,
+    activeIncident,
+    activeImpactData,
+    enterIncidentMode,
+    exitIncidentMode,
+    selectedAsset,
+    setSelectedAsset,
   };
 
   return (

@@ -8,6 +8,7 @@
     "server": "node server/index.js",
     "start": "node server/index.js",
     "build": "vite build",
+    "test": "node --test src/engine/__tests__/*.test.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

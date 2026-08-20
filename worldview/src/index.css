@@ -1,41 +1,57 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
 @import "tailwindcss";
 
-/* ── Design System Tokens (Bilawal Sidhu WorldView Style) ── */
+/* ── Design System Tokens (WorldView Incident Command) ── */
 :root {
   --color-cyan: #00FFFF;
   --color-cyan-dim: rgba(0, 255, 255, 0.4);
-  --color-cyan-glow: rgba(0, 255, 255, 0.1);
-  --color-amber: #FFD700;
-  --color-red: #FF4444;
+  --color-cyan-glow: rgba(0, 255, 255, 0.12);
+  --color-amber: #FFB000;
+  --color-amber-dim: rgba(255, 176, 0, 0.4);
+  --color-red: #FF3333;
+  --color-red-dim: rgba(255, 51, 51, 0.4);
+  --color-green: #00FF88;
   --color-white: #FFFFFF;
   --color-bg: #000000;
 
-  --panel-bg: rgba(0, 6, 10, 0.82);
-  --panel-border: rgba(0, 255, 255, 0.174);
+  --panel-bg: rgba(0, 8, 14, 0.88);
+  --panel-border: rgba(0, 255, 255, 0.18);
+  --panel-border-red: rgba(255, 51, 51, 0.35);
 
   --font-mono: 'Share Tech Mono', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* Typography Scale */
-  --font-xs: clamp(11px, 0.75vw, 12px);
-  --font-sm: clamp(12px, 0.8vw, 13px);
-  --font-md: clamp(14px, 1vw, 16px);
-  --font-lg: clamp(18px, 1.25vw, 20px);
-  --font-xl: clamp(24px, 1.5vw, 28px);
+  /* Standardized Typography Scale (Phase 3A) */
+  --font-tiny: 11px;
+  --font-meta: 12px;
+  --font-heading: 14px;
+  --font-body: 15px;
+  --font-title: 24px;
+  --font-risk: 28px;
+  --font-stat: 30px;
 
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
+  /* Spacing Scale (4, 8, 12, 16, 20, 24, 32px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
 }
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  text-transform: uppercase;
-  /* Reference uses mostly uppercase */
 }
 
 html,
@@ -67,7 +83,6 @@ input,
 select,
 textarea {
   font-family: inherit;
-  text-transform: uppercase;
 }
 
 /* ── Accessibility ── */
@@ -78,13 +93,19 @@ textarea {
 
 /* ── Custom Scrollbar ── */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 10, 20, 0.5);
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-cyan-dim);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-cyan);
 }

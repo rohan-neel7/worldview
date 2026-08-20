@@ -11,7 +11,14 @@ import {
   Search, 
   ZoomIn, 
   ZoomOut,
-  Crosshair
+  Crosshair,
+  AlertTriangle,
+  Flame,
+  ShieldAlert,
+  Compass,
+  Activity,
+  Building2,
+  Plane
 } from 'lucide-react';
 
 // Sharpen fragment shader for Cesium PostProcessStage
@@ -51,24 +58,33 @@ const BLOOM_SHADER = `
   }
 `;
 
-export default function VisualControlsPanel({ viewer, earthquakeData }) {
+export default function VisualControlsPanel({ 
+  viewer, 
+  earthquakeData, 
+  onDetectCrisis,
+  onSimulateFlood,
+  onResetSimulation
+}) {
   const {
     activePreset,
-    flightCount,
-    satelliteCount,
-    earthquakeCount,
     showHUD,
     setShowHUD,
     cameraPosition,
     layout,
     setLayout,
+    incidents,
+    pipelineMetrics,
+    simulationStatus,
+    operationalMode,
+    activeIncident,
+    activeImpactData,
+    enterIncidentMode,
+    exitIncidentMode,
   } = useWorldView();
 
   const [isPanning, setIsPanning] = useState(false);
   const [bloomEnabled, setBloomEnabled] = useState(false);
   const [sharpenValue, setSharpenValue] = useState(0);
-  const [fogDensity, setFogDensity] = useState(0.0002);
-  const [atmosEnabled, setAtmosEnabled] = useState(true);
   const [time, setTime] = useState(new Date().toISOString());
 
   // Post-process refs
@@ -150,17 +166,24 @@ export default function VisualControlsPanel({ viewer, earthquakeData }) {
     }
   }, [setLayout, setShowHUD]);
 
-  // ── Detect Highest Magnitude ──
+  // ── Detect Highest Magnitude & Trigger Crisis ──
   const handleDetect = useCallback(() => {
-    if (!viewer || !earthquakeData || earthquakeData.length === 0) return;
-    const biggest = earthquakeData.reduce((prev, current) =>
-      (prev.magnitude > current.magnitude) ? prev : current
-    );
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(biggest.lon, biggest.lat, 500000),
-      duration: 2
-    });
-  }, [viewer, earthquakeData]);
+    if (earthquakeData && earthquakeData.length > 0) {
+      const biggest = earthquakeData.reduce((prev, current) =>
+        ((prev.magnitude || 0) > (current.magnitude || 0)) ? prev : current
+      );
+      if (viewer && biggest.lon && biggest.lat) {
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(biggest.lon, biggest.lat, 500000),
+          duration: 2
+        });
+      }
+      if (enterIncidentMode) {
+        enterIncidentMode(`hyp-earthquake-usgs_${biggest.id}`);
+      }
+    }
+    if (onDetectCrisis) onDetectCrisis();
+  }, [viewer, earthquakeData, onDetectCrisis, enterIncidentMode]);
 
   // ── Zoom Controls ──
   const handleZoomIn = useCallback(() => {
@@ -194,13 +217,16 @@ export default function VisualControlsPanel({ viewer, earthquakeData }) {
   // ── Reset View ──
   const handleResetView = useCallback(() => {
     if (!viewer) return;
+    if (operationalMode === 'INCIDENT') {
+      exitIncidentMode();
+    }
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(20, 20, 25000000),
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
       duration: 2.5,
       easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
     });
-  }, [viewer]);
+  }, [viewer, operationalMode, exitIncidentMode]);
 
   useEffect(() => {
     return () => {
@@ -221,23 +247,79 @@ export default function VisualControlsPanel({ viewer, earthquakeData }) {
     return `${Math.round(alt)} m`;
   };
 
+  const isIncidentMode = operationalMode === 'INCIDENT' && Boolean(activeIncident);
+
   return (
     <div className="visual-controls-panel">
-      {/* ── Top Stats ── */}
+      {/* ── Context Header ── */}
       <div className="panel-stats-top">
-        <div className="stats-label">PRIMARY INTERFACE</div>
-        <div className="stats-value">
-          <Layers size={18} color="var(--color-cyan)" /> {activePreset}
+        <div className="stats-label">
+          {isIncidentMode ? 'INCIDENT COMMAND ACTIVE' : 'GLOBAL MONITORING'}
+        </div>
+        <div className="stats-value" style={{ color: isIncidentMode ? '#FF3333' : 'var(--color-cyan)' }}>
+          {isIncidentMode ? <ShieldAlert size={18} color="#FF3333" /> : <Layers size={18} color="var(--color-cyan)" />}
+          {isIncidentMode ? activeIncident.title.slice(0, 18) + '...' : activePreset}
         </div>
         <div className="stats-recording">
-          <div className="recording-dot" />
-          <span>SYSTEM FEED {formattedTime}</span>
+          <div className={`recording-dot ${isIncidentMode ? 'pulse-red' : ''}`} />
+          <span>{isIncidentMode ? 'LIVE DISASTER COMMAND' : `SYSTEM FEED ${formattedTime}`}</span>
         </div>
       </div>
 
-      {/* ── Camera Info ── */}
+      {/* ═══════════════════════════════════════════════════════════════
+          CONTEXTUAL INCIDENT STATUS (When Incident is Active)
+      ═══════════════════════════════════════════════════════════════ */}
+      {isIncidentMode && (
+        <div className="active-incident-card-panel">
+          <div className="incident-panel-badge">
+            <span className="sev-dot-red" />
+            <span>RISK: {activeIncident.risk?.severity || 'HIGH'} ({activeIncident.risk?.score || 75}/100)</span>
+          </div>
+
+          <div className="incident-panel-metrics">
+            <div className="inc-metric-row">
+              <span>LOCATION:</span>
+              <strong>{activeIncident.location?.name || 'Epicentral Zone'}</strong>
+            </div>
+            <div className="inc-metric-row">
+              <span>EXPOSED POP:</span>
+              <strong className="highlight-amber">
+                ~{(activeImpactData?.exposureMetrics?.populationExposed || 0).toLocaleString()}
+              </strong>
+            </div>
+            <div className="inc-metric-row">
+              <span>HOSPITALS:</span>
+              <strong className="highlight-red">
+                {activeImpactData?.exposureMetrics?.hospitalsCount || 0} in zone
+              </strong>
+            </div>
+            <div className="inc-metric-row">
+              <span>CONFIDENCE:</span>
+              <strong className="highlight-cyan">
+                {Math.round((activeIncident.confidence || 0.95) * 100)}%
+              </strong>
+            </div>
+          </div>
+
+          <button 
+            className="incident-open-dossier-btn"
+            onClick={onDetectCrisis}
+          >
+            <ShieldAlert size={14} /> OPEN COMMAND DOSSIER
+          </button>
+
+          <button 
+            className="incident-exit-mode-btn"
+            onClick={exitIncidentMode}
+          >
+            <Compass size={14} /> RETURN TO WORLD MODE
+          </button>
+        </div>
+      )}
+
+      {/* ── Camera Telemetry Info ── */}
       <div className="vc-section-divider">
-        <span className="vc-section-label">TELEMETRY</span>
+        <span className="vc-section-label">CAMERA TELEMETRY</span>
         <div className="vc-section-line" />
       </div>
       <div className="camera-info-grid">
@@ -265,7 +347,7 @@ export default function VisualControlsPanel({ viewer, earthquakeData }) {
         </button>
       </div>
 
-      {/* ── Visual Controls ── */}
+      {/* ── Visual Operations ── */}
       <div className="vc-section-divider">
         <span className="vc-section-label">OPERATIONS</span>
         <div className="vc-section-line" />
@@ -325,15 +407,26 @@ export default function VisualControlsPanel({ viewer, earthquakeData }) {
         </div>
       </div>
 
-      {/* ── Actions ── */}
+      {/* ── Commands ── */}
       <div className="vc-section-divider">
         <span className="vc-section-label">COMMANDS</span>
         <div className="vc-section-line" />
       </div>
 
       <div className="control-row">
-        <button className="control-btn action-btn" onClick={handleDetect}>
-          <Search size={14} /> DETECT CRISIS
+        <button 
+          className={`control-btn action-btn ${simulationStatus?.active ? 'active' : ''}`} 
+          onClick={simulationStatus?.active ? onResetSimulation : onSimulateFlood}
+          title="Run deterministic multi-stage Bengaluru flash-flood simulation scenario"
+        >
+          <AlertTriangle size={14} color={simulationStatus?.active ? '#FFD700' : 'var(--color-cyan)'} /> 
+          {simulationStatus?.active ? 'RESET SIMULATION' : 'SIMULATE FLOOD'}
+        </button>
+      </div>
+
+      <div className="control-row">
+        <button className="control-btn action-btn primary-action" onClick={handleDetect}>
+          <Search size={14} /> INSPECT SEISMIC CRISIS
         </button>
       </div>
 
@@ -345,20 +438,28 @@ export default function VisualControlsPanel({ viewer, earthquakeData }) {
 
       <div className="control-row">
         <button className="control-btn action-btn reset-btn" onClick={handleResetView}>
-          <RefreshCw size={14} /> RECENTER GLOBE
+          <RefreshCw size={14} /> {isIncidentMode ? 'EXIT INCIDENT' : 'RECENTER GLOBE'}
         </button>
       </div>
 
       {/* ── System Status ── */}
       <div className="system-status">
-        <div className="status-label-main">NETWORK STATUS</div>
+        <div className="status-label-main">INTELLIGENCE PIPELINE</div>
         <div className="status-item">
-          <label>DATA LINK</label>
-          <span className="status-ok">ESTABLISHED</span>
+          <label>FUSION ENGINE</label>
+          <span className="status-ok">OPERATIONAL</span>
         </div>
         <div className="status-item">
-          <label>SAT CONN</label>
-          <span className="status-ok">ACTIVE</span>
+          <label>DATA INGEST</label>
+          <span className="status-ok">
+            {pipelineMetrics?.liveCount || 0} LIVE / {pipelineMetrics?.simulatedCount || 0} SIM
+          </span>
+        </div>
+        <div className="status-item">
+          <label>ACTIVE INCIDENTS</label>
+          <span className={incidents?.length > 0 ? 'status-alert' : 'status-ok'}>
+            {incidents?.length || 0} TRACKED
+          </span>
         </div>
       </div>
     </div>

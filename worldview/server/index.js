@@ -209,7 +209,41 @@ app.get('/api/ships', (req, res) => {
 // ============================================================================
 // 2. GEMINI CRISIS INTELLIGENCE ENDPOINT
 // ============================================================================
-app.post('/api/gemini', geminiLimiter, async (req, res, next) => {
+app.post('/api/gemini', geminiLimiter, async (req, res, _next) => {
+  const { flightCount = 0, quakeCount = 0, satCount = 0, topQuake = '', selectedRegion = 'Global', incident = null } = req.body || {};
+
+  const generateTacticalFallback = () => {
+    if (incident) {
+      const mag = Number(incident.magnitude) || 7.0;
+      const depth = incident.depthKm || 10;
+      const loc = incident.location || 'Regional Fault Zone';
+      const pop = incident.populationExposed ? `an estimated ${incident.populationExposed.toLocaleString()} residents` : 'regional population centers';
+      const hosp = incident.hospitalsExposed || 0;
+      const prio = incident.severity || 'HIGH';
+
+      return `[PRIORITY: ${prio}]
+SITUATION: Shallow seismic event of magnitude M${mag.toFixed(1)} recorded at ${depth} km focal depth near ${loc}. Crustal fault displacement generates significant peak ground acceleration across the immediate epicentral zone.
+IMPACT: Ground-motion models indicate potential exposure encompasses ${pop} and ${hosp} healthcare facility(ies). Structural stress is concentrated within the severe isoseismal core, creating risk of non-structural disruption and localized transportation delays.
+DIRECTIVE: 01 Assess coastal ground motion and monitor for secondary sea-level variations. 02 Verify emergency power and bed capacity across identified healthcare facilities. 03 Maintain continuous seismic telemetry surveillance for aftershock propagation.`;
+    }
+
+    const normFlight = Math.min(Math.max(0, parseInt(flightCount, 10) || 0), 5000);
+    const normQuake = Math.min(Math.max(0, parseInt(quakeCount, 10) || 0), 5000);
+    const normSat = Math.min(Math.max(0, parseInt(satCount, 10) || 0), 5000);
+    const normTopQuake = String(topQuake).slice(0, 100).replace(/[^\w\s.,-]/g, '');
+    const ALLOWED_REGIONS = ['Global', 'Americas', 'Europe', 'Asia Pacific', 'Middle East', 'Africa'];
+    const normRegion = ALLOWED_REGIONS.includes(selectedRegion) ? selectedRegion : 'Global';
+
+    const isHigh = normTopQuake && (normTopQuake.includes('M6') || normTopQuake.includes('M7') || normTopQuake.includes('M8') || normQuake > 40);
+    const isMed = (normTopQuake && (normTopQuake.includes('M5') || normQuake > 15)) || normFlight > 80;
+    const prio = isHigh ? 'HIGH' : isMed ? 'MED' : 'LOW';
+
+    return `[PRIORITY: ${prio}]
+SITUATION: Telemetry confirms ${normFlight} tracked aircraft and ${normSat} orbital surveillance assets across the ${normRegion} theater. Primary seismic vector: ${normTopQuake || 'Nominal baseline activity across monitored fault systems'}.
+STRATEGIC IMPACT: Airspace and maritime transit corridors maintain baseline operational flow. Seismic telemetry is actively correlated against regional infrastructure nodes.
+TACTICAL DIRECTIVE: Maintain priority sensor sweep on subsequent LEO orbital passes. Task AIS monitoring on coastal approaches and sustain automated data link verification.`;
+  };
+
   try {
     checkDailyReset();
 
@@ -229,9 +263,6 @@ app.post('/api/gemini', geminiLimiter, async (req, res, next) => {
       });
     }
 
-    // Request Validation & Parameter Normalization
-    const { flightCount = 0, quakeCount = 0, satCount = 0, topQuake = '', selectedRegion = 'Global' } = req.body || {};
-
     const normFlight = Math.min(Math.max(0, parseInt(flightCount, 10) || 0), 5000);
     const normQuake = Math.min(Math.max(0, parseInt(quakeCount, 10) || 0), 5000);
     const normSat = Math.min(Math.max(0, parseInt(satCount, 10) || 0), 5000);
@@ -240,36 +271,66 @@ app.post('/api/gemini', geminiLimiter, async (req, res, next) => {
     const normTopQuake = String(topQuake).slice(0, 100).replace(/[^\w\s.,-]/g, '');
 
     // Build Cache Key from Normalized Parameters
-    const cacheKey = `gemini:${normRegion}:${normFlight}:${normQuake}:${normSat}:${normTopQuake}`;
+    const cacheKey = incident
+      ? `gemini:incident:${incident.id || incident.title}:${incident.magnitude}:${incident.depthKm}`
+      : `gemini:${normRegion}:${normFlight}:${normQuake}:${normSat}:${normTopQuake}`;
     const cachedOutput = apiCache.get(cacheKey);
     if (cachedOutput) {
       return res.json({ intelligence: cachedOutput, cached: true });
     }
 
-    // Server-Side Prompt Template Generation
-    const prompt = `You are WORLDVIEW CRISIS ANALYST — a military intelligence AI.
-[PRIORITY: HIGH/MED/LOW] Situation. Action. Impact.
+    // Server-Side Structured Intelligence Prompt (Calm, Non-Authoritative)
+    let prompt;
+    if (incident) {
+      prompt = `You are WORLDVIEW CRISIS ANALYST — an objective geospatial crisis intelligence system.
+Synthesize the following structured incident telemetry snapshot into a readable briefing.
+Use calm, measured, analytical, and non-authoritative operational language ("Assessment", "Consider", "Potential", "Based on current evidence").
+
+Format EXACTLY as:
+[PRIORITY: ${incident.severity || 'HIGH'}]
+SITUATION: (2-3 sentences on why this seismic event matters, hypocenter depth, and tectonic fault context)
+IMPACT: (2-3 sentences assessing potential exposure for ~${incident.populationExposed ? incident.populationExposed.toLocaleString() : 'local'} population, ${incident.hospitalsExposed || 0} hospitals, and transport infrastructure)
+DIRECTIVE: (3 concise numbered checks: 01. ... 02. ... 03. ...)
+
+Incident Snapshot:
+- Event: ${incident.title}
+- Magnitude: M${incident.magnitude}
+- Focal Depth: ${incident.depthKm} km
+- Location: ${incident.location}
+- Population Exposed: ~${incident.populationExposed || 0}
+- Healthcare Facilities in Zone: ${incident.hospitalsExposed || 0}
+- Airports in Zone: ${incident.airportsExposed || 0}
+- Risk Score: ${incident.riskScore}/100 [${incident.severity}]`;
+    } else {
+      prompt = `You are WORLDVIEW CRISIS ANALYST — an elite military geospatial intelligence AI.
+Analyze the following real-time telemetry snapshot and generate a concise tactical crisis dossier.
+
+Format EXACTLY as:
+[PRIORITY: HIGH/MED/LOW]
+SITUATION: (1-2 sentences on active airspace, maritime, or seismic events in ${normRegion})
+STRATEGIC IMPACT: (1-2 sentences on critical infrastructure, airspace corridors, or regional security)
+TACTICAL DIRECTIVE: (1-2 actionable command directives, sensor tasking, or advisories)
 
 Rules:
-- Under 40 words total
-- Use specific location names
+- HIGH = seismic magnitude >= 5.5 or severe airspace anomaly; MED = developing cluster; LOW = routine
+- Be concise, tactical, and direct
 - Never say "I" or "As an AI"
-- No generic advice — be precise and actionable
-- HIGH = imminent threat, MED = developing situation, LOW = routine
 
 Snapshot:
-- Active flights: ${normFlight}
-- Active satellites: ${normSat}
-- Earthquakes (24h): ${normQuake}
-- Top seismic event: ${normTopQuake || 'no significant events'}
-- Region: ${normRegion}`;
+- Theater: ${normRegion}
+- Tracked Airspace Contacts: ${normFlight}
+- Active Orbital Assets: ${normSat}
+- 24h Seismic Occurrences: ${normQuake}
+- Primary Seismic Vector: ${normTopQuake || 'no significant events'}`;
+    }
 
     const apiKey1 = process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_KEY_1;
     const apiKey2 = process.env.GEMINI_API_KEY_2 || process.env.VITE_GEMINI_KEY_2;
 
     if (!apiKey1 && !apiKey2) {
+      const fallbackReport = generateTacticalFallback();
       return res.json({
-        intelligence: '[PRIORITY: LOW] Intelligence feed offline. Gemini API key not configured on server.',
+        intelligence: fallbackReport,
         fallback: true
       });
     }
@@ -334,9 +395,10 @@ Snapshot:
     res.json({ intelligence: trimmed, cached: false });
   } catch (err) {
     console.error('[Gemini Proxy Error]:', err.message);
-    res.status(500).json({
+    const fallbackReport = generateTacticalFallback();
+    res.json({
       error: err.message,
-      intelligence: `[PRIORITY: LOW] ${err.message}`,
+      intelligence: fallbackReport,
       fallback: true
     });
   }

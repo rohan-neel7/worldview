@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Cesium from 'cesium';
 import GlobeViewer from './components/GlobeViewer';
+import PrimaryModeBar from './components/PrimaryModeBar';
 import DataLayersPanel from './components/DataLayersPanel';
 import VisualControlsPanel from './components/VisualControlsPanel';
+import CrisisDiscoverySidebar from './components/CrisisDiscoverySidebar';
 import LocationsPanel from './components/LocationsPanel';
 import StylePresetsPanel from './components/StylePresetsPanel';
 import CrisisIntelligencePanel from './components/CrisisIntelligencePanel';
+import IncidentCommandDossier from './components/IncidentCommandDossier';
 import SatelliteLabels from './components/SatelliteLabels';
 import { useWorldView } from './WorldViewContext';
+import { globalDataPipeline, BENGALURU_FLOOD_SCENARIO } from './engine/index.js';
 import useFlights from './hooks/useFlights';
 import useSatellites from './hooks/useSatellites';
 import useEarthquakes from './hooks/useEarthquakes';
 import useShips from './hooks/useShips';
 import useGemini from './hooks/useGemini';
-import { Globe } from 'lucide-react';
 import './worldview.css';
 
 const REGION_VIEWS = {
@@ -25,43 +28,18 @@ const REGION_VIEWS = {
   AFRICA: { lon: 20, lat: 5, alt: 10000000 },
 };
 
-function Clock() {
-  const timeRef = useRef(null);
-
-  useEffect(() => {
-    const updateTime = () => {
-      if (timeRef.current) {
-        timeRef.current.innerText = new Date().toISOString().replace('T', ' ').split('.')[0] + 'Z';
-      }
-    };
-    const timer = setInterval(updateTime, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div 
-      ref={timeRef}
-      className="header-time" 
-      style={{
-        fontSize: 'var(--font-sm)',
-        color: 'rgba(255, 255, 255, 0.4)',
-        letterSpacing: '0.1em',
-        marginTop: '4px',
-        fontFamily: 'var(--font-mono)'
-      }}
-    >
-      {new Date().toISOString().replace('T', ' ').split('.')[0] + 'Z'}
-    </div>
-  );
-}
-
 export default function App() {
   const {
+    activeMode,
+    isWorldMode,
+    isCrisisMode,
+    selectedCountry,
     activeLayers,
     activePreset,
     flightCount,
     satelliteCount,
     earthquakeCount,
+    shipCount,
     setFlightCount,
     setSatelliteCount,
     setEarthquakeCount,
@@ -69,13 +47,91 @@ export default function App() {
     showHUD,
     selectedRegion,
     setRegionStats,
+    setIncidents,
+    setPipelineMetrics,
+    setSimulationStatus,
+    operationalMode,
+    activeIncident,
+    activeImpactData,
+    enterIncidentMode,
+    exitIncidentMode,
+    selectedCrisis,
+    clearSelectedCrisis,
+    refreshCrisisDiscovery,
   } = useWorldView();
 
-  // Data Fetching Hooks
-  const { data: flightData } = useFlights(activeLayers.flights, selectedRegion);
-  const { data: satelliteData } = useSatellites(activeLayers.satellites);
-  const { data: earthquakeData } = useEarthquakes(activeLayers.earthquakes, selectedRegion);
-  const { data: shipData } = useShips(activeLayers.ships, selectedRegion);
+  // ── Workload Separation: Suspend Global-Only Feeds in Crisis Mode ──
+  const flightsEnabled = isWorldMode && Boolean(activeLayers.flights);
+  const satsEnabled = isWorldMode && Boolean(activeLayers.satellites);
+  const shipsEnabled = isWorldMode && Boolean(activeLayers.ships);
+  const quakesEnabled = Boolean(activeLayers.earthquakes);
+
+  const { data: flightData } = useFlights(flightsEnabled, selectedRegion);
+  const { data: satelliteData } = useSatellites(satsEnabled);
+  const { data: earthquakeData } = useEarthquakes(quakesEnabled, selectedRegion);
+  const { data: shipData } = useShips(shipsEnabled, selectedRegion);
+
+  // ── Ingest Telemetry & Run Country Discovery ──
+  useEffect(() => {
+    if (earthquakeData && earthquakeData.length > 0) {
+      globalDataPipeline.ingestRaw('USGS', earthquakeData, { sourceMode: 'LIVE' });
+      const currentIncidents = globalDataPipeline.getIncidents();
+      setIncidents(currentIncidents);
+      setPipelineMetrics(globalDataPipeline.getPipelineMetrics());
+      refreshCrisisDiscovery(earthquakeData);
+    } else {
+      refreshCrisisDiscovery([]);
+    }
+  }, [earthquakeData, setIncidents, setPipelineMetrics, refreshCrisisDiscovery]);
+
+  useEffect(() => {
+    if (isWorldMode && flightData && flightData.length > 0) {
+      globalDataPipeline.ingestRaw('OpenSky', flightData, { sourceMode: 'LIVE' });
+      setPipelineMetrics(globalDataPipeline.getPipelineMetrics());
+    }
+  }, [flightData, isWorldMode, setPipelineMetrics]);
+
+  useEffect(() => {
+    if (isWorldMode && satelliteData && satelliteData.length > 0) {
+      globalDataPipeline.ingestRaw('CelesTrak', satelliteData, { sourceMode: 'LIVE' });
+      setPipelineMetrics(globalDataPipeline.getPipelineMetrics());
+    }
+  }, [satelliteData, isWorldMode, setPipelineMetrics]);
+
+  useEffect(() => {
+    if (isWorldMode && shipData && shipData.length > 0) {
+      globalDataPipeline.ingestRaw('AISStream', shipData, { sourceMode: 'LIVE' });
+      setPipelineMetrics(globalDataPipeline.getPipelineMetrics());
+    }
+  }, [shipData, isWorldMode, setPipelineMetrics]);
+
+  // Simulation Trigger Handlers
+  const handleTriggerFloodSimulation = useCallback(() => {
+    globalDataPipeline.scenarioRunner.runInstant(BENGALURU_FLOOD_SCENARIO);
+    const incs = globalDataPipeline.getIncidents();
+    setIncidents(incs);
+    setPipelineMetrics(globalDataPipeline.getPipelineMetrics());
+    setSimulationStatus({
+      active: true,
+      completed: true,
+      scenarioName: BENGALURU_FLOOD_SCENARIO.name,
+    });
+    if (incs.length > 0) {
+      enterIncidentMode(incs[0].id);
+    }
+  }, [setIncidents, setPipelineMetrics, setSimulationStatus, enterIncidentMode]);
+
+  const handleResetSimulation = useCallback(() => {
+    globalDataPipeline.clear();
+    setIncidents([]);
+    setPipelineMetrics(globalDataPipeline.getPipelineMetrics());
+    setSimulationStatus({
+      active: false,
+      completed: false,
+      scenarioName: null,
+    });
+    exitIncidentMode();
+  }, [setIncidents, setPipelineMetrics, setSimulationStatus, exitIncidentMode]);
 
   // State for GlobeViewer instance
   const [viewer, setViewer] = useState(null);
@@ -84,19 +140,17 @@ export default function App() {
   const satSelectFnRef = useRef(null);
   const flightSelectFnRef = useRef(null);
 
-  // Region Camera Flight — uses REGION_VIEWS with proper altitudes
+  // Region Camera Flight — only in WORLD mode
   useEffect(() => {
-    if (!viewer || !selectedRegion) return;
+    if (!viewer || !selectedRegion || activeMode !== 'WORLD') return;
     const view = REGION_VIEWS[selectedRegion];
     if (view) {
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          view.lon, view.lat, view.alt
-        ),
-        duration: 2
+        destination: Cesium.Cartesian3.fromDegrees(view.lon, view.lat, view.alt),
+        duration: 2,
       });
     }
-  }, [selectedRegion, viewer]);
+  }, [selectedRegion, viewer, activeMode]);
 
   // Update region stats
   useEffect(() => {
@@ -104,7 +158,7 @@ export default function App() {
       flights: flightData?.length || 0,
       quakes: earthquakeData?.length || 0,
       sats: satelliteData?.length || 0,
-      ships: shipData?.length || 0
+      ships: shipData?.length || 0,
     });
   }, [flightData, earthquakeData, satelliteData, shipData, setRegionStats]);
 
@@ -115,20 +169,35 @@ export default function App() {
     if (type === 'ships') setShipCount(count);
   }, [setFlightCount, setSatelliteCount, setEarthquakeCount, setShipCount]);
 
-  // Intelligence Logic
+  // Intelligence & Gemini Logic
   const topQuake = earthquakeData?.[0] || null;
   const gemini = useGemini({
     flightCount,
     quakeCount: earthquakeCount,
     satCount: satelliteCount,
     topQuake,
-    selectedRegion
+    selectedRegion,
+    activeIncident,
+    activeImpactData,
   });
 
+  const handleLaunchIncidentCommand = useCallback(() => {
+    if (!activeIncident && topQuake) {
+      enterIncidentMode(`hyp-earthquake-usgs_${topQuake.id}`);
+    } else if (activeIncident) {
+      enterIncidentMode(activeIncident.id);
+    }
+    gemini.runAnalysis();
+  }, [activeIncident, topQuake, enterIncidentMode, gemini]);
+
   return (
-    <div className="worldview-app">
+    <div className={`worldview-app mode-${activeMode.toLowerCase()}`}>
       <div className="background-grid" />
-      {/* ── Background Globe ── */}
+
+      {/* ── Primary Top Mode Selector Bar ── */}
+      <PrimaryModeBar />
+
+      {/* ── Background Cesium Globe ── */}
       <GlobeViewer
         flightData={flightData}
         satelliteData={satelliteData}
@@ -142,78 +211,102 @@ export default function App() {
         onFlightSelect={(fn) => { flightSelectFnRef.current = fn; }}
       />
 
-      {/* ── Satellite Floating Labels ── */}
-      {showHUD && activeLayers.satellites && (
-        <SatelliteLabels
-          viewer={viewer}
-          satelliteData={satelliteData}
-          onSatelliteClick={(name, tle1, tle2, lat, lon, alt) => {
-            if (satSelectFnRef.current) satSelectFnRef.current(name, tle1, tle2, lat, lon, alt);
-          }}
-        />
+      {/* ═══════════════════════════════════════════════════════════════
+          MODE 1: WORLD SITUATIONAL AWARENESS WORKSPACE
+      ═══════════════════════════════════════════════════════════════ */}
+      {isWorldMode && (
+        <>
+          {/* Satellite Floating Labels */}
+          {showHUD && activeLayers.satellites && (
+            <SatelliteLabels
+              viewer={viewer}
+              satelliteData={satelliteData}
+              onSatelliteClick={(name, tle1, tle2, lat, lon, alt) => {
+                if (satSelectFnRef.current) satSelectFnRef.current(name, tle1, tle2, lat, lon, alt);
+              }}
+            />
+          )}
+
+          {/* Left Panel: Global Surveillance & Layer Controls */}
+          {showHUD && (
+            <aside className="left-panel">
+              <DataLayersPanel
+                flightData={flightData}
+                earthquakeData={earthquakeData}
+                satelliteData={satelliteData}
+                shipData={shipData}
+                viewer={viewer}
+                onSelectFlight={(flight) => {
+                  if (flightSelectFnRef.current) flightSelectFnRef.current(flight);
+                }}
+              />
+            </aside>
+          )}
+
+          {/* Right Panel: Global Visual Controls & Camera Telemetry */}
+          <aside className="right-panel">
+            <VisualControlsPanel
+              viewer={viewer}
+              earthquakeData={earthquakeData}
+              onDetectCrisis={handleLaunchIncidentCommand}
+              onSimulateFlood={handleTriggerFloodSimulation}
+              onResetSimulation={handleResetSimulation}
+            />
+          </aside>
+
+          {/* Bottom Floating Dock: Global Theaters & Visual Styles */}
+          {showHUD && (
+            <div className="floating-dock">
+              <CrisisIntelligencePanel
+                report={gemini.structuredReport}
+                onOpenOverlay={handleLaunchIncidentCommand}
+                onTrigger={gemini.runAnalysis}
+                loading={gemini.loading}
+              />
+
+              <div className="compact-panel locations">
+                <div className="compact-header">
+                  THEATERS <span>[+]</span>
+                </div>
+                <LocationsPanel />
+              </div>
+
+              <div className="compact-panel presets">
+                <div className="compact-header">
+                  STYLE: {activePreset}
+                </div>
+                <StylePresetsPanel />
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {/* ── Left Fixed Panel ── */}
-      {showHUD && (
-        <aside className="left-panel">
-          <header className="header-main">
-            <div className="header-title-row">
-              <Globe size={24} color="var(--color-cyan)" strokeWidth={2.5} /> WORLDVIEW
-            </div>
-            <div className="header-subtitle">REAL-TIME GEOSPATIAL INTELLIGENCE</div>
-            <div className="header-classification">
-              UNCLASSIFIED // OPEN SOURCE OSINT
-            </div>
-            <Clock />
-          </header>
-          <DataLayersPanel
-            flightData={flightData}
-            earthquakeData={earthquakeData}
-            satelliteData={satelliteData}
-            shipData={shipData}
-            viewer={viewer}
-            onSelectFlight={(flight) => {
-              if (flightSelectFnRef.current) flightSelectFnRef.current(flight);
-            }}
-          />
-        </aside>
+      {/* ═══════════════════════════════════════════════════════════════
+          MODE 2: CRISIS INTELLIGENCE WORKSPACE (Country-First Flow)
+      ═══════════════════════════════════════════════════════════════ */}
+      {isCrisisMode && (
+        <>
+          {/* Left Sidebar: Country Theater Selector & Active Crises List */}
+          {showHUD && (
+            <CrisisDiscoverySidebar
+              earthquakeData={earthquakeData}
+            />
+          )}
+
+          {/* Right Sidebar: Side-Mounted Incident Command Overlay */}
+          {Boolean(selectedCrisis) && (
+            <IncidentCommandDossier
+              isOpen={true}
+              onClose={clearSelectedCrisis}
+              viewer={viewer}
+              geminiReport={gemini.structuredReport}
+              geminiLoading={gemini.loading}
+              onTriggerGemini={gemini.runAnalysis}
+            />
+          )}
+        </>
       )}
-
-      {/* ── Right Fixed Panel ── */}
-      <aside className="right-panel">
-        <VisualControlsPanel
-          viewer={viewer}
-          earthquakeData={earthquakeData}
-        />
-      </aside>
-
-      {/* ── Bottom Right Crisis Intelligence ── */}
-      {showHUD && (
-        <CrisisIntelligencePanel
-          onTrigger={gemini.runAnalysis}
-          loading={gemini.loading}
-        />
-      )}
-
-      {/* ── Bottom Floating Dock ── */}
-      {showHUD && (
-        <div className="floating-dock">
-          <div className="compact-panel locations">
-            <div className="compact-header">
-              LOCATIONS <span>[+]</span>
-            </div>
-            <LocationsPanel />
-          </div>
-
-          <div className="compact-panel presets">
-            <div className="compact-header">
-              STYLE: {activePreset}
-            </div>
-            <StylePresetsPanel />
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
