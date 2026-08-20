@@ -125,8 +125,9 @@ export class CycloneIntelligence {
 
     const description = `Tropical Cyclone "${cycloneName}" (${stage}). Max sustained winds: ${maxWindMps.toFixed(1)} m/s (${Math.round(maxWindMps * 3.6)} km/h), central pressure: ${centralPressureHpa} hPa. Forecast track points: ${forecastTrack.length}. ${secondaryRisks.stormSurge?.note || ''}`;
 
+    const rweId = cluster.realWorldEventId || primaryEvent.id;
     return new HazardHypothesis({
-      id: `hyp-cyclone-${primaryEvent.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      id: `hyp-cyclone-${rweId.replace(/[^a-zA-Z0-9]/g, '_')}`,
       hazardType: 'CYCLONE',
       title: `Tropical Cyclone "${cycloneName}" - ${stage}`,
       description,

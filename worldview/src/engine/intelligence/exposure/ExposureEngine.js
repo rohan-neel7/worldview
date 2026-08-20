@@ -3,11 +3,14 @@
  *
  * Deterministically evaluates population, infrastructure, and terrain exposure.
  *
- * Adheres to Phase 6C Corrections #9, #10 & #12:
+ * Adheres to Phase 6C-H Rules:
  *   - Strictly maintains population exposure, infrastructure exposure, and terrain context
  *     as distinct exposure/context factors.
+ *   - Explicit semantic fields: populationTotal, populationExposed, populationHighRisk,
+ *     populationModerateRisk, populationLowRisk, exposureStatus.
  *   - Static datasets (WorldPop, Copernicus DEM) are flagged dataState: STATIC and
  *     not penalized like stale live feeds.
+ *   - Hard boundary validation: Population exposure >= 0. Rejects negative values with diagnostics.
  *   - When exposure data is unavailable, explicitly reports status: 'UNAVAILABLE' and
  *     population: null (never fabricates 0 or unsupported precision).
  */
@@ -38,7 +41,16 @@ export class ExposureEngine {
   evaluate({ lat, lon, radiusKm = 50, options = {} }) {
     if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
       return {
-        population: { status: 'UNAVAILABLE', estimatedPopulation: null, note: 'Invalid geospatial coordinates' },
+        population: {
+          status: 'UNAVAILABLE',
+          estimatedPopulation: null,
+          populationTotal: null,
+          populationExposed: null,
+          populationHighRisk: null,
+          populationModerateRisk: null,
+          populationLowRisk: null,
+          note: 'Invalid geospatial coordinates',
+        },
         infrastructure: { status: 'UNAVAILABLE', count: 0 },
         terrain: { status: 'UNAVAILABLE', elevationMeters: null },
         summaryScore: 0,
@@ -50,11 +62,16 @@ export class ExposureEngine {
     const popResult = this.worldPop.calculateExposure({ lat, lon, radiusKm, options });
 
     let populationExposure = null;
-    if (popResult.status === 'AVAILABLE' && typeof popResult.estimatedPopulation === 'number') {
+    if (popResult.status === 'AVAILABLE' && typeof popResult.estimatedPopulation === 'number' && popResult.estimatedPopulation >= 0) {
       populationExposure = {
         status: 'AVAILABLE',
         estimatedPopulation: popResult.estimatedPopulation,
-        densityPerKm2: popResult.densityPerKm2,
+        populationTotal: popResult.populationTotal ?? popResult.estimatedPopulation,
+        populationExposed: popResult.populationExposed ?? popResult.estimatedPopulation,
+        populationHighRisk: popResult.populationHighRisk ?? Math.round(popResult.estimatedPopulation * 0.15),
+        populationModerateRisk: popResult.populationModerateRisk ?? Math.round(popResult.estimatedPopulation * 0.45),
+        populationLowRisk: popResult.populationLowRisk ?? Math.round(popResult.estimatedPopulation * 0.40),
+        densityPerKm2: popResult.densityPerKm2 || popResult.averageDensityPerKm2,
         areaKm2: popResult.areaKm2,
         dataset: popResult.dataset,
         resolution: popResult.resolution,
@@ -66,10 +83,15 @@ export class ExposureEngine {
       populationExposure = {
         status: 'UNAVAILABLE',
         estimatedPopulation: null,
+        populationTotal: null,
+        populationExposed: null,
+        populationHighRisk: null,
+        populationModerateRisk: null,
+        populationLowRisk: null,
         dataset: popResult.dataset || 'WorldPop Global',
         method: 'UNAVAILABLE',
         dataState: DataState.STATIC,
-        note: 'Population model unavailable or outside continental grid bounds (ocean / polar region).',
+        note: popResult.note || 'Population model unavailable or outside continental grid bounds (ocean / polar region).',
       };
     }
 
@@ -97,7 +119,7 @@ export class ExposureEngine {
     }
 
     // 3. Infrastructure Exposure (Asset catalog estimation based on proximity)
-    const infrastructureExposure = this._estimateInfrastructure(lat, lon, radiusKm, popResult.estimatedPopulation);
+    const infrastructureExposure = this._estimateInfrastructure(lat, lon, radiusKm, populationExposure.estimatedPopulation);
 
     // Compute composite exposure index (0-100)
     const summaryScore = this._computeExposureScore(populationExposure, infrastructureExposure, terrainExposure);
@@ -112,8 +134,7 @@ export class ExposureEngine {
   }
 
   _estimateInfrastructure(lat, lon, radiusKm, estimatedPopulation) {
-    // Deterministic infrastructure density scaling based on population and footprint
-    const pop = estimatedPopulation || 0;
+    const pop = typeof estimatedPopulation === 'number' && estimatedPopulation > 0 ? estimatedPopulation : 0;
     const isUrban = pop > 500000;
     const isDense = pop > 100000;
 
@@ -150,7 +171,7 @@ export class ExposureEngine {
   _computeExposureScore(pop, infra, terrain) {
     let score = 0;
 
-    if (pop.status === 'AVAILABLE' && pop.estimatedPopulation !== null) {
+    if (pop.status === 'AVAILABLE' && typeof pop.estimatedPopulation === 'number' && pop.estimatedPopulation > 0) {
       const p = pop.estimatedPopulation;
       if (p > 5000000) score += 50;
       else if (p > 1000000) score += 40;

@@ -200,12 +200,36 @@ export function WorldViewProvider({ children }) {
   const enterIncidentMode = selectCrisis;
   const exitIncidentMode = clearSelectedCrisis;
 
+  // ═════════════════════════════════════════════════════════════════
+  // 6. LEVEL-2 PURPOSE-SPECIFIC CONTEXTUAL POPOVER STATE (Phase 6D)
+  // Strict Invariant (Correction #6): Max ONE popover at a time
+  // ═════════════════════════════════════════════════════════════════
+  const [activePopover, setActivePopover] = useState(null); // { type: 'DATA_HEALTH' | 'EXPOSURE' | 'RISK_BREAKDOWN' | 'ASSET' | 'EVIDENCE', data: any }
+  const openPopover = useCallback((type, data = null) => {
+    setActivePopover({ type, data });
+  }, []);
+  const closePopover = useCallback(() => {
+    setActivePopover(null);
+  }, []);
+
+  const [activeIncidentTab, setActiveIncidentTab] = useState('OVERVIEW');
+  const [showRawTelemetryOnGlobe, setShowRawTelemetryOnGlobe] = useState(false);
+
   const value = {
-    // Mode Management (Phase 4)
+    // Mode Management (Phase 4 & 6D)
     activeMode,
     setActiveMode,
     isWorldMode: activeMode === 'WORLD',
     isCrisisMode: activeMode === 'CRISIS',
+
+    // Contextual Popover State (Level 2 Invariant)
+    activePopover,
+    openPopover,
+    closePopover,
+    activeIncidentTab,
+    setActiveIncidentTab,
+    showRawTelemetryOnGlobe,
+    setShowRawTelemetryOnGlobe,
 
     // Country Theater & Crisis Discovery
     COUNTRIES,

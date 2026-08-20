@@ -11,7 +11,7 @@
  *   - Decays assessment confidence deterministically if evidence is STALE or EXPIRED.
  */
 
-import { EvidenceRelevance, FreshnessStatus } from '../../event/types.js';
+import { EvidenceRelevance, FreshnessStatus, SourceMode } from '../../event/types.js';
 import { DataState, ProviderTier } from '../../providers/providerTypes.js';
 
 export const REQUIRED_EVIDENCE_SPEC = Object.freeze({
@@ -93,6 +93,7 @@ export class EvidenceEngine {
       evidence.push({
         eventId: ev.id,
         source,
+        sourceMode: ev.sourceMode || provenance.sourceMode || SourceMode.LIVE,
         providerId: provenance.providerId || source,
         providerTier,
         type: ev.type,

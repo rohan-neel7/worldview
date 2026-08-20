@@ -73,10 +73,11 @@ export class CentralizedCameraController {
    * Smooth flight to Global overview
    */
   flyToGlobal(duration = 2.0) {
-    if (!this.viewer || this.viewer.isDestroyed?.()) return;
     this.cancelActiveFlight();
     const flightId = ++this.activeFlightId;
     const dest = this.history.world || GLOBAL_CAMERA_VIEW;
+
+    if (!this.viewer || this.viewer.isDestroyed?.()) return;
 
     try {
       this.viewer.camera.flyTo({
@@ -104,13 +105,15 @@ export class CentralizedCameraController {
    * @param {number} [duration=2.2]
    */
   flyToCountry(country, duration = 2.2) {
-    if (!this.viewer || this.viewer.isDestroyed?.() || !country?.center) return;
     this.cancelActiveFlight();
     const flightId = ++this.activeFlightId;
+    if (!country?.center) return;
     const { lat, lon } = country.center;
     const alt = country.defaultAlt || 4500000;
 
     this.history.country = { lat, lon, alt, heading: 0, pitch: -80, roll: 0 };
+
+    if (!this.viewer || this.viewer.isDestroyed?.()) return;
 
     try {
       this.viewer.camera.flyTo({
@@ -139,13 +142,12 @@ export class CentralizedCameraController {
    * @param {object} [options={}]
    */
   flyToFlightPOV(flight, options = {}) {
-    if (!this.viewer || this.viewer.isDestroyed?.() || !flight) return;
+    this.cancelActiveFlight();
+    const flightId = ++this.activeFlightId;
+    if (!flight) return;
     const lat = flight.lat || flight.latitude;
     const lon = flight.lon || flight.longitude;
     if (lat == null || lon == null) return;
-
-    this.cancelActiveFlight();
-    const flightId = ++this.activeFlightId;
 
     // Determine altitude based on flight cruising level + operational radius buffer
     const flightAlt = Number(flight.altitude || flight.alt) || 10000;
@@ -153,6 +155,8 @@ export class CentralizedCameraController {
     const headingDeg = flight.heading != null ? Number(flight.heading) : 0;
     const pitch = options.pitch != null ? options.pitch : -50;
     const duration = options.duration || 2.0;
+
+    if (!this.viewer || this.viewer.isDestroyed?.()) return;
 
     try {
       this.viewer.camera.flyTo({
@@ -175,41 +179,46 @@ export class CentralizedCameraController {
 
   /**
    * CRISIS SIDE: Smooth flight to point at and frame the exact radius of a Crisis event
-   * Calculates altitude and tactical POV to fully frame the isoseismal / crisis circle perimeter.
+   * Calculates adaptive altitude and tactical POV to fully frame the incident impact geometry / estimated shaking extent
+   * while preserving essential country, regional, and coastal context.
    *
    * @param {object|number} crisisOrLat - Crisis object or latitude number
    * @param {number} [lonOrRadius] - Longitude number or radius in meters
    * @param {object} [options={}]
    */
   flyToCrisisRadius(crisisOrLat, lonOrRadius, options = {}) {
-    if (!this.viewer || this.viewer.isDestroyed?.()) return;
     this.cancelActiveFlight();
     const flightId = ++this.activeFlightId;
 
     let lat = 0;
     let lon = 0;
     let radiusMeters = 50000;
+    let hazardType = 'EARTHQUAKE';
     let mag = 5.5;
 
     if (typeof crisisOrLat === 'object' && crisisOrLat !== null) {
       const c = crisisOrLat;
-      lat = c.location?.lat != null ? c.location.lat : c.lat;
-      lon = c.location?.lon != null ? c.location.lon : c.lon;
-      mag = c.magnitude || c.metrics?.magnitude || 5.5;
+      lat = c.location?.lat != null ? c.location.lat : (c.lat != null ? c.lat : 0);
+      lon = c.location?.lon != null ? c.location.lon : (c.lon != null ? c.lon : 0);
+      hazardType = (c.type || 'EARTHQUAKE').toUpperCase();
+      mag = c.magnitude || c.metrics?.magnitude || c.impactData?.magnitude || 5.5;
 
-      // Extract effective radius from impact shaking zones or severity
+      // Extract effective radius from impact shaking zones or severity model
       if (c.impactData?.shakingZones?.moderateRadiusKm) {
-        radiusMeters = c.impactData.shakingZones.moderateRadiusKm * 1000 * 1.35;
+        // Full moderate-to-severe shaking perimeter with context buffer
+        radiusMeters = c.impactData.shakingZones.moderateRadiusKm * 1000 * 1.8;
       } else if (c.impactData?.shakingZones?.lightRadiusKm) {
-        radiusMeters = c.impactData.shakingZones.lightRadiusKm * 1000 * 0.9;
-      } else if (c.severity === 'CRITICAL') {
-        radiusMeters = 70000 * 1.3;
-      } else if (c.severity === 'HIGH') {
-        radiusMeters = 45000 * 1.3;
-      } else if (c.severity === 'MODERATE') {
-        radiusMeters = 30000 * 1.3;
+        radiusMeters = c.impactData.shakingZones.lightRadiusKm * 1000 * 1.1;
+      } else if (hazardType === 'CYCLONE' || hazardType === 'FLOOD') {
+        radiusMeters = 180000 * 1.5;
+      } else if (c.severity === 'CRITICAL' || mag >= 7.0) {
+        radiusMeters = 95000 * 1.8;
+      } else if (c.severity === 'HIGH' || mag >= 6.0) {
+        radiusMeters = 65000 * 1.7;
+      } else if (c.severity === 'MODERATE' || mag >= 5.0) {
+        radiusMeters = 40000 * 1.6;
       } else {
-        radiusMeters = 18000 * 1.3;
+        radiusMeters = 25000 * 1.5;
       }
     } else {
       lat = Number(crisisOrLat);
@@ -219,13 +228,21 @@ export class CentralizedCameraController {
 
     if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return;
 
-    // Field-of-view based altitude calculation: frames the entire radius in viewport
-    // Altitude = radius / tan(FOV/2) * margin ≈ radius * 2.2
-    const targetAlt = options.altitude || Math.max(140000, Math.min(1200000, radiusMeters * 2.25));
-    const duration = options.duration || (targetAlt > 600000 ? 2.4 : 1.9);
-    const pitch = options.pitch != null ? options.pitch : -55;
+    // Viewport-aware field-of-view calculation:
+    // Vertical FOV is ~60°. To frame radius R at pitch -52°, height ~ R / tan(30°) * contextBuffer (~3.2 - 3.8)
+    const contextBuffer = options.contextBuffer || 3.4;
+    const computedAltitude = radiusMeters * contextBuffer;
+
+    // Hard safety bounds:
+    // Min 180,000m (never get buried in terrain texture)
+    // Max 2,600,000m (never zoom out into empty space for local incidents)
+    const targetAlt = options.altitude || Math.max(180000, Math.min(2600000, computedAltitude));
+    const duration = options.duration || (targetAlt > 800000 ? 2.3 : 1.85);
+    const pitch = options.pitch != null ? options.pitch : -52;
 
     this.history.incident = { lat, lon, alt: targetAlt, heading: 0, pitch, roll: 0 };
+
+    if (!this.viewer || this.viewer.isDestroyed?.()) return;
 
     try {
       this.viewer.camera.flyTo({

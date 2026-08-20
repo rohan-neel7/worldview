@@ -1,5 +1,6 @@
 import { IncidentStatus, SeverityLevel, SourceMode } from '../event/types.js';
 import { validateTransition } from './IncidentStateMachine.js';
+import { scoreToSeverity } from '../risk/severityPolicy.js';
 
 /**
  * Creates a Canonical Incident instance.
@@ -12,7 +13,7 @@ export function createIncident({
   title,
   type,
   status = IncidentStatus.DETECTED,
-  severity = SeverityLevel.MODERATE,
+  severity = null,
   confidence = 0.5,
   sourceMode = SourceMode.LIVE,
   location = null,
@@ -33,6 +34,18 @@ export function createIncident({
     };
   }
 
+  // Derive deterministic severity from risk assessment or centralized policy
+  let resolvedSeverity = severity;
+  if (!resolvedSeverity) {
+    if (risk?.severity) {
+      resolvedSeverity = risk.severity;
+    } else if (typeof risk?.score === 'number') {
+      resolvedSeverity = scoreToSeverity(risk.score);
+    } else {
+      resolvedSeverity = SeverityLevel.MODERATE;
+    }
+  }
+
   const initialHistory = lifecycleHistory.length > 0
     ? [...lifecycleHistory]
     : [
@@ -49,7 +62,7 @@ export function createIncident({
     title: title || `${type} Incident`,
     type,
     status,
-    severity,
+    severity: resolvedSeverity,
     confidence: Math.max(0.0, Math.min(1.0, typeof confidence === 'number' ? confidence : 0.5)),
     sourceMode,
     location: location || { lat: 0, lon: 0, name: 'Unknown Location', radiusKm: 25 },

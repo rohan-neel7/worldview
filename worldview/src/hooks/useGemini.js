@@ -133,9 +133,9 @@ export default function useGemini({ flightCount, quakeCount, satCount, topQuake,
       const hospStr = hospCount > 0 ? `${hospCount} healthcare facility(ies)` : 'critical facilities';
 
       const fallback = `[PRIORITY: ${prio}]
-SITUATION: Seismic event of magnitude ${incMag.toFixed(1)} at a focal depth of ${incDepth} km near ${incPlace}. The shallow hypocenter generates strong ground acceleration across the local tectonic fault system.
-IMPACT: Potential exposure encompasses ${popStr} and ${hospStr}. Ground-motion attenuation models indicate moderate-to-severe shaking within the epicentral radius, creating non-structural disruption risk and localized slope instability.
-DIRECTIVE: Verify operational status and emergency power at local healthcare facilities. Prioritize clearance of key transport corridors and monitor for aftershocks across the next 24-hour window.`;
+SITUATION: M${incMag.toFixed(1)} seismic rupture (focal depth ${incDepth}km) near ${incPlace}. Worldview estimates elevated shaking exposure based on event magnitude, focal depth, epicentral distance, and empirical seismo-attenuation models.
+IMPACT: Modeled shaking extent encompasses ${popStr} and ${hospStr}. Ground-motion attenuation models indicate moderate-to-severe shaking within the estimated isoseismal perimeter, creating potential non-structural disruption risk and localized slope failure susceptibility.
+DIRECTIVE: Verify operational status and emergency power at local healthcare facilities. Prioritize ground reconnaissance of key transport corridors and monitor for aftershock potential across the next 24-hour window.`;
 
       setIntelligence(fallback);
       setGeminiOutput(fallback);

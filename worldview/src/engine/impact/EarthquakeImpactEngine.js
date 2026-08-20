@@ -60,7 +60,8 @@ export class EarthquakeImpactEngine {
           exposureFactor = 0.6;
         }
 
-        const exposedPop = Math.round(city.population * exposureFactor);
+        const cityPop = typeof city.population === 'number' && city.population > 0 ? city.population : 0;
+        const exposedPop = Math.max(0, Math.round(cityPop * exposureFactor));
         estimatedPopulation += exposedPop;
 
         exposedCities.push({
@@ -78,8 +79,9 @@ export class EarthquakeImpactEngine {
     if (estimatedPopulation === 0 && zones.moderateRadiusKm > 0) {
       const areaSqKm = Math.PI * Math.pow(zones.moderateRadiusKm, 2);
       // Assume modest rural baseline (18 people/km^2)
-      estimatedPopulation = Math.round(areaSqKm * 18);
+      estimatedPopulation = Math.max(0, Math.round(areaSqKm * 18));
     }
+    estimatedPopulation = Math.max(0, estimatedPopulation);
 
     // 3. Exposed Healthcare Facilities (Hospitals)
     const exposedHospitals = [];
@@ -191,6 +193,8 @@ export class EarthquakeImpactEngine {
       shakingZones: zones,
       exposureMetrics: {
         populationExposed: estimatedPopulation,
+        populationTotal: estimatedPopulation,
+        exposureStatus: 'AVAILABLE',
         hospitalsCount: exposedHospitals.length,
         airportsCount: exposedAirports.length,
         portsCount: exposedPorts.length,
@@ -414,7 +418,7 @@ export class EarthquakeImpactEngine {
         objective: `Deploy ground inspection teams to ${roads.length} intersecting arterial transport corridor(s)`,
         relevantEvidence: `${roads.length} major transport artery(ies) in shaking perimeter: ${roads.map((r) => r.name).join(', ')}`,
         confidence: 0.85,
-        rationale: 'Ground acceleration and slope instability create high risk of roadway blockage and bridge damage.',
+        rationale: 'Estimated shaking exposure and slope gradient indicate potential risk of localized roadway blockage.',
       });
     }
 
@@ -428,7 +432,7 @@ export class EarthquakeImpactEngine {
         objective: `Conduct structural and navigation inspection across ${ports.length} port facility(ies)`,
         relevantEvidence: `${ports.length} port(s) located within shaking zone: ${ports.map((p) => p.name).join(', ')}`,
         confidence: 0.88,
-        rationale: 'Ground acceleration can trigger quayside liquefaction, crane misalignment, and navigational shoaling.',
+        rationale: 'Estimated shaking exposure indicates potential for littoral quayside disruption and berth misalignment.',
       });
     }
 

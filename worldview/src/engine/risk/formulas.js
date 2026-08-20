@@ -1,4 +1,7 @@
 import { SeverityLevel } from '../event/types.js';
+import { scoreToSeverity as centralizedScoreToSeverity, SEVERITY_THRESHOLDS, getSeverityFromScore, getSeverityMetadata } from './severityPolicy.js';
+
+export { SEVERITY_THRESHOLDS, getSeverityFromScore, getSeverityMetadata };
 
 /**
  * Normalizes a raw continuous value to a 0-100 score given min/max thresholds.
@@ -11,13 +14,10 @@ export function normalizeScore(value, minVal, maxVal) {
 }
 
 /**
- * Maps a 0-100 numerical risk score to a SeverityLevel enum.
+ * Maps a 0-100 numerical risk score to a SeverityLevel enum via centralized policy.
  */
 export function scoreToSeverity(score) {
-  if (score >= 80) return SeverityLevel.CRITICAL;
-  if (score >= 60) return SeverityLevel.HIGH;
-  if (score >= 30) return SeverityLevel.MODERATE;
-  return SeverityLevel.LOW;
+  return centralizedScoreToSeverity(score);
 }
 
 /**

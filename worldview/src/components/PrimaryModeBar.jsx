@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useWorldView } from '../WorldViewContext';
-import { Globe, ShieldAlert, Radio, Activity, Compass, Layers } from 'lucide-react';
+import { Globe, ShieldAlert, Radio, Layers } from 'lucide-react';
 
 function LiveUtcClock() {
   const clockRef = useRef(null);
@@ -8,7 +8,13 @@ function LiveUtcClock() {
   useEffect(() => {
     const updateTime = () => {
       if (clockRef.current) {
-        clockRef.current.innerText = new Date().toISOString().replace('T', ' ').split('.')[0] + 'Z';
+        const now = new Date();
+        const day = String(now.getUTCDate()).padStart(2, '0');
+        const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        const mon = months[now.getUTCMonth()];
+        const year = now.getUTCFullYear();
+        const time = now.toISOString().split('T')[1].split('.')[0];
+        clockRef.current.innerText = `UTC  ${day} ${mon} ${year}  ${time}`;
       }
     };
     updateTime();
@@ -21,7 +27,6 @@ function LiveUtcClock() {
 
 export default function PrimaryModeBar() {
   const { 
-    activeMode, 
     setActiveMode, 
     isWorldMode, 
     isCrisisMode, 
@@ -39,9 +44,6 @@ export default function PrimaryModeBar() {
           <span className="brand-title">WORLDVIEW</span>
           <span className="brand-divider">/</span>
           <span className="brand-tag">OSINT INTELLIGENCE</span>
-        </div>
-        <div className="classification-pill">
-          UNCLASSIFIED // OPEN SOURCE
         </div>
       </div>
 
@@ -72,20 +74,21 @@ export default function PrimaryModeBar() {
         </div>
       </div>
 
-      {/* ── Right: Telemetry Context & Live Clock ── */}
+      {/* ── Right: Theater Context & Live Clock ── */}
       <div className="mode-bar-right">
         <div className="theater-status-pill">
           {isCrisisMode ? (
             <>
+              <span style={{ fontSize: '14px', lineHeight: 1 }}>THEATER:</span>
               <span className="theater-flag">{selectedCountry.flag}</span>
-              <span className="theater-name">{selectedCountry.name.toUpperCase()} THEATER</span>
-              {selectedCrisis && <span className="incident-live-tag">[EVENT ACTIVE]</span>}
+              <span className="theater-name font-display" style={{ fontWeight: 600 }}>{selectedCountry.name.toUpperCase()}</span>
+              {selectedCrisis && <span className="incident-live-tag" style={{ color: 'var(--severity-critical)', fontWeight: 600 }}>[ACTIVE]</span>}
             </>
           ) : (
             <>
-              <Radio size={12} className="live-pulse-cyan" />
-              <span className="theater-name">GLOBAL FEED</span>
-              <span className="preset-name">[{activePreset}]</span>
+              <Radio size={12} style={{ color: 'var(--color-cyan)' }} />
+              <span className="theater-name font-display" style={{ fontWeight: 600 }}>GLOBAL FEED</span>
+              <span style={{ color: 'var(--color-text-muted)' }}>[{activePreset}]</span>
             </>
           )}
         </div>

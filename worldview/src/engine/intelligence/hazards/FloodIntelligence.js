@@ -53,8 +53,8 @@ export class FloodIntelligence {
 
     for (const ev of cluster.events) {
       const p = ev.payload || {};
-      const r24 = p.rainfallMm ?? p.rainfall_24h_mm ?? 0;
-      const r1 = p.rainfall1hMm ?? p.rainfall_1h_mm ?? 0;
+      const r24 = p.rainfallMm ?? p.rainfall_24h_mm ?? p.precipitationMm ?? 0;
+      const r1 = p.rainfall1hMm ?? p.rainfall_1h_mm ?? p.precipitationRateMmH ?? 0;
       if (r24 > maxRainfall24h) maxRainfall24h = r24;
       if (r1 > maxRainfall1h) maxRainfall1h = r1;
 
@@ -64,7 +64,7 @@ export class FloodIntelligence {
       if (ev.type === 'WATER_LEVEL_OBSERVATION' || p.riverStageMeters != null) {
         hasRiverGauge = true;
       }
-      if (ev.type === 'FLOOD_SIGNAL' && p.inundationAreaKm2 != null) {
+      if (ev.type === 'FLOOD_SIGNAL' || p.floodDepthMeters != null || p.inundationAreaKm2 != null) {
         hasInundationObservation = true;
       }
     }
@@ -99,6 +99,7 @@ export class FloodIntelligence {
         relevance: 'EXPOSURE_SIGNAL',
         confidence: 0.90,
         isOfficial: false,
+        sourceMode: primaryEvent.sourceMode || SourceMode.LIVE,
         dataState: DataState.STATIC,
         relationship: `Population exposed in flood basin: ~${exposure.population.estimatedPopulation.toLocaleString()} residents (${exposure.population.method})`,
         metrics: { estimatedPopulation: exposure.population.estimatedPopulation },
@@ -117,6 +118,7 @@ export class FloodIntelligence {
         relevance: 'ENVIRONMENTAL_CONTEXT',
         confidence: 0.92,
         isOfficial: false,
+        sourceMode: primaryEvent.sourceMode || SourceMode.LIVE,
         dataState: DataState.STATIC,
         relationship: `Basin topography: ${exposure.terrain.elevationMeters}m elevation, ${exposure.terrain.derived?.slopeDegrees?.toFixed(1) || 0}° slope gradient (${exposure.terrain.terrainType})`,
         metrics: { elevationMeters: exposure.terrain.elevationMeters, slopeDegrees: exposure.terrain.derived?.slopeDegrees },
@@ -156,7 +158,7 @@ export class FloodIntelligence {
     // Crisis Priority (0-100)
     const rainComponent = Math.min(100, Math.round((maxRainfall24h / 250) * 100));
     const exposureComponent = exposure.summaryScore || 10;
-    const warningComponent = hasOfficialWarning ? 95 : 40;
+    const warningComponent = hasOfficialWarning ? 95 : hasInundationObservation ? 85 : 40;
     const terrainComponent = isLowLying ? 85 : 40;
 
     const crisisPriority = Math.round(
@@ -174,8 +176,9 @@ export class FloodIntelligence {
 
     const description = `${titlePrefix} near ${place}. Measured 24h precipitation: ${maxRainfall24h.toFixed(1)} mm. Topography: ${exposure.terrain?.terrainType || 'Lowland'} (${exposure.terrain?.derived?.slopeDegrees?.toFixed(1) || 0}° slope). ${popText}. Missing evidence gaps: ${evidenceGaps.join(', ') || 'None'}.`;
 
+    const rweId = cluster.realWorldEventId || primaryEvent.id;
     return new HazardHypothesis({
-      id: `hyp-flood-${primaryEvent.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      id: `hyp-flood-${rweId.replace(/[^a-zA-Z0-9]/g, '_')}`,
       hazardType: 'FLOOD',
       title: `${titlePrefix} - ${place}`,
       description,

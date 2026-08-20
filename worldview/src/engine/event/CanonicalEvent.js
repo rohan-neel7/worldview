@@ -16,7 +16,7 @@ function safeToISOString(val, fallbackNow = true) {
  * @param {string} params.source - Data provider source identifier (e.g. 'USGS', 'OpenSky')
  * @param {string} [params.sourceMode=SourceMode.LIVE] - 'LIVE' | 'SIMULATED' | 'FIXTURE' | 'DERIVED'
  * @param {string} params.type - EventType identifier (e.g. 'EARTHQUAKE', 'AIRCRAFT')
- * @param {string} params.category - EventCategory identifier ('HAZARD', 'MOVING_ENTITY', etc.)
+ * @param {string} [params.category] - EventCategory identifier ('HAZARD', 'MOVING_ENTITY', etc.)
  * @param {string|number|Date} params.observedAt - Observation timestamp
  * @param {string|number|Date} [params.receivedAt] - Ingestion timestamp
  * @param {string|number|Date} [params.processedAt] - Normalization timestamp
@@ -34,7 +34,7 @@ export function createCanonicalEvent({
   source,
   sourceMode = SourceMode.LIVE,
   type,
-  category,
+  category = null,
   observedAt,
   receivedAt = new Date().toISOString(),
   processedAt = new Date().toISOString(),
@@ -49,6 +49,19 @@ export function createCanonicalEvent({
   const normObservedAt = safeToISOString(observedAt, true);
   const normReceivedAt = safeToISOString(receivedAt, true);
   const normProcessedAt = safeToISOString(processedAt, true);
+
+  let resolvedCategory = category;
+  if (!resolvedCategory && type) {
+    if (type.includes('EARTHQUAKE') || type.includes('TSUNAMI') || type.includes('FLOOD') || type.includes('WILDFIRE') || type.includes('CYCLONE')) {
+      resolvedCategory = EventCategory.HAZARD;
+    } else if (type.includes('AIRCRAFT') || type.includes('SATELLITE') || type.includes('VESSEL')) {
+      resolvedCategory = EventCategory.MOVING_ENTITY;
+    } else if (type.includes('WEATHER') || type.includes('RAINFALL')) {
+      resolvedCategory = EventCategory.ENVIRONMENTAL;
+    } else {
+      resolvedCategory = EventCategory.OBSERVATION;
+    }
+  }
 
   // Compute GeoJSON geometry from location if not explicitly provided
   let finalGeometry = geometry;
@@ -80,7 +93,7 @@ export function createCanonicalEvent({
     source,
     sourceMode,
     type,
-    category,
+    category: resolvedCategory || EventCategory.OBSERVATION,
     observedAt: normObservedAt,
     receivedAt: normReceivedAt,
     processedAt: normProcessedAt,
@@ -100,6 +113,16 @@ export function createCanonicalEvent({
   }
 
   return event;
+}
+
+/**
+ * Class representation of CanonicalEvent.
+ */
+export class CanonicalEvent {
+  constructor(params = {}) {
+    const obj = createCanonicalEvent(params);
+    Object.assign(this, obj);
+  }
 }
 
 /**

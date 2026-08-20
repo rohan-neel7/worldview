@@ -1,36 +1,67 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 @import "tailwindcss";
 
-/* ── Design System Tokens (WorldView Incident Command) ── */
+/* ── Command-Grade Design Tokens (Phase 6D.1) ── */
 :root {
-  --color-cyan: #00FFFF;
-  --color-cyan-dim: rgba(0, 255, 255, 0.4);
-  --color-cyan-glow: rgba(0, 255, 255, 0.12);
-  --color-amber: #FFB000;
-  --color-amber-dim: rgba(255, 176, 0, 0.4);
-  --color-red: #FF3333;
-  --color-red-dim: rgba(255, 51, 51, 0.4);
-  --color-green: #00FF88;
+  /* ── 1. Font System (Strict 3 Families Maximum) ── */
+  --font-display: 'Space Grotesk', -apple-system, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* ── 2. Readability Typography Scale (Mandatory Desktop Minimums) ── */
+  --font-size-title-lg: 26px;     /* Incident Title (Min 26px) */
+  --font-size-metric-hero: 30px;  /* Priority & Risk Score (Min 30px) */
+  --font-size-metric-major: 24px; /* Major Numeric Values (Min 24px) */
+  --font-size-header: 15px;       /* Section Headers (Min 15px) */
+  --font-size-card-title: 14px;   /* Card Titles (Min 14px) */
+  --font-size-body: 14px;         /* Primary Body (14–16px) */
+  --font-size-sec: 13px;          /* Secondary Descriptions (12–13px) */
+  --font-size-meta: 12px;         /* Technical Metadata (11–12px) */
+  --font-size-micro: 11px;        /* Micro Labels (10–11px) */
+
+  /* ── 3. Visual Depth System (5 Hierarchy Levels) ── */
+  --surface-l0: #05080E;                       /* L0: Background / Globe Canvas */
+  --surface-l1: rgba(9, 13, 22, 0.94);         /* L1: Primary Sidebars */
+  --surface-l2: rgba(17, 24, 39, 0.65);        /* L2: Cards & Sub-containers */
+  --surface-l3: rgba(30, 41, 59, 0.85);        /* L3: Selected / Active Surfaces */
+  --surface-l4: #0F172A;                       /* L4: Contextual Level-2 Popovers */
+  --surface-l5: rgba(239, 68, 68, 0.15);       /* L5: Critical System Alerts */
+
+  /* ── 4. Palette & Restrained Severity Colors ── */
+  --color-bg: #05080E;
   --color-white: #FFFFFF;
-  --color-bg: #000000;
+  --color-text-muted: #94A3B8;
+  --color-cyan: #06B6D4;
+  --color-cyan-bright: #22D3EE;
+  --color-cyan-dim: rgba(6, 182, 212, 0.35);
+  
+  --severity-critical: #EF4444;
+  --severity-critical-bg: rgba(239, 68, 68, 0.12);
+  --severity-critical-border: rgba(239, 68, 68, 0.4);
 
-  --panel-bg: rgba(0, 8, 14, 0.88);
-  --panel-border: rgba(0, 255, 255, 0.18);
-  --panel-border-red: rgba(255, 51, 51, 0.35);
+  --severity-high: #F97316;
+  --severity-high-bg: rgba(249, 115, 22, 0.12);
+  --severity-high-border: rgba(249, 115, 22, 0.4);
 
-  --font-mono: 'Share Tech Mono', monospace;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --severity-moderate: #F59E0B;
+  --severity-moderate-bg: rgba(245, 158, 11, 0.12);
+  --severity-moderate-border: rgba(245, 158, 11, 0.4);
 
-  /* Standardized Typography Scale (Phase 3A) */
-  --font-tiny: 11px;
-  --font-meta: 12px;
-  --font-heading: 14px;
-  --font-body: 15px;
-  --font-title: 24px;
-  --font-risk: 28px;
-  --font-stat: 30px;
+  --severity-low: #06B6D4;
+  --severity-low-bg: rgba(6, 182, 212, 0.08);
+  --severity-low-border: rgba(6, 182, 212, 0.3);
 
-  /* Spacing Scale (4, 8, 12, 16, 20, 24, 32px) */
+  --status-available: #10B981;
+  --status-degraded: #F59E0B;
+  --status-failed: #EF4444;
+
+  /* ── 5. Border Discipline Tokens ── */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-selected: rgba(34, 211, 238, 0.5);
+  --border-critical: rgba(239, 68, 68, 0.5);
+
+  /* ── 6. Spacing Scale (4, 8, 12, 16, 20, 24, 32, 40px) ── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -38,14 +69,19 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-body {
+  font-family: var(--font-body);
 }
 
 .font-mono {
   font-family: var(--font-mono);
-}
-
-.font-sans {
-  font-family: var(--font-sans);
 }
 
 * {
@@ -60,8 +96,8 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--color-bg);
-  font-family: var(--font-mono);
+  background: var(--surface-l0);
+  font-family: var(--font-body);
   color: var(--color-white);
   -webkit-font-smoothing: antialiased;
 }

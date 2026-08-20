@@ -2,14 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Cesium from 'cesium';
 import GlobeViewer from './components/GlobeViewer';
 import PrimaryModeBar from './components/PrimaryModeBar';
-import DataLayersPanel from './components/DataLayersPanel';
-import VisualControlsPanel from './components/VisualControlsPanel';
-import CrisisDiscoverySidebar from './components/CrisisDiscoverySidebar';
-import LocationsPanel from './components/LocationsPanel';
-import StylePresetsPanel from './components/StylePresetsPanel';
-import CrisisIntelligencePanel from './components/CrisisIntelligencePanel';
-import IncidentCommandDossier from './components/IncidentCommandDossier';
-import SatelliteLabels from './components/SatelliteLabels';
+import BottomStatusBar from './components/BottomStatusBar';
+import WorldModeWorkspace from './components/world/WorldModeWorkspace';
+import CrisisModeWorkspace from './components/crisis/CrisisModeWorkspace';
 import { useWorldView } from './WorldViewContext';
 import { globalDataPipeline, BENGALURU_FLOOD_SCENARIO } from './engine/index.js';
 import useFlights from './hooks/useFlights';
@@ -215,98 +210,36 @@ export default function App() {
           MODE 1: WORLD SITUATIONAL AWARENESS WORKSPACE
       ═══════════════════════════════════════════════════════════════ */}
       {isWorldMode && (
-        <>
-          {/* Satellite Floating Labels */}
-          {showHUD && activeLayers.satellites && (
-            <SatelliteLabels
-              viewer={viewer}
-              satelliteData={satelliteData}
-              onSatelliteClick={(name, tle1, tle2, lat, lon, alt) => {
-                if (satSelectFnRef.current) satSelectFnRef.current(name, tle1, tle2, lat, lon, alt);
-              }}
-            />
-          )}
-
-          {/* Left Panel: Global Surveillance & Layer Controls */}
-          {showHUD && (
-            <aside className="left-panel">
-              <DataLayersPanel
-                flightData={flightData}
-                earthquakeData={earthquakeData}
-                satelliteData={satelliteData}
-                shipData={shipData}
-                viewer={viewer}
-                onSelectFlight={(flight) => {
-                  if (flightSelectFnRef.current) flightSelectFnRef.current(flight);
-                }}
-              />
-            </aside>
-          )}
-
-          {/* Right Panel: Global Visual Controls & Camera Telemetry */}
-          <aside className="right-panel">
-            <VisualControlsPanel
-              viewer={viewer}
-              earthquakeData={earthquakeData}
-              onDetectCrisis={handleLaunchIncidentCommand}
-              onSimulateFlood={handleTriggerFloodSimulation}
-              onResetSimulation={handleResetSimulation}
-            />
-          </aside>
-
-          {/* Bottom Floating Dock: Global Theaters & Visual Styles */}
-          {showHUD && (
-            <div className="floating-dock">
-              <CrisisIntelligencePanel
-                report={gemini.structuredReport}
-                onOpenOverlay={handleLaunchIncidentCommand}
-                onTrigger={gemini.runAnalysis}
-                loading={gemini.loading}
-              />
-
-              <div className="compact-panel locations">
-                <div className="compact-header">
-                  THEATERS <span>[+]</span>
-                </div>
-                <LocationsPanel />
-              </div>
-
-              <div className="compact-panel presets">
-                <div className="compact-header">
-                  STYLE: {activePreset}
-                </div>
-                <StylePresetsPanel />
-              </div>
-            </div>
-          )}
-        </>
+        <WorldModeWorkspace
+          flightData={flightData}
+          satelliteData={satelliteData}
+          earthquakeData={earthquakeData}
+          shipData={shipData}
+          viewer={viewer}
+          satSelectFnRef={satSelectFnRef}
+          flightSelectFnRef={flightSelectFnRef}
+          onLaunchIncidentCommand={handleLaunchIncidentCommand}
+          onTriggerFloodSimulation={handleTriggerFloodSimulation}
+          onResetSimulation={handleResetSimulation}
+          gemini={gemini}
+        />
       )}
 
       {/* ═══════════════════════════════════════════════════════════════
           MODE 2: CRISIS INTELLIGENCE WORKSPACE (Country-First Flow)
       ═══════════════════════════════════════════════════════════════ */}
       {isCrisisMode && (
-        <>
-          {/* Left Sidebar: Country Theater Selector & Active Crises List */}
-          {showHUD && (
-            <CrisisDiscoverySidebar
-              earthquakeData={earthquakeData}
-            />
-          )}
-
-          {/* Right Sidebar: Side-Mounted Incident Command Overlay */}
-          {Boolean(selectedCrisis) && (
-            <IncidentCommandDossier
-              isOpen={true}
-              onClose={clearSelectedCrisis}
-              viewer={viewer}
-              geminiReport={gemini.structuredReport}
-              geminiLoading={gemini.loading}
-              onTriggerGemini={gemini.runAnalysis}
-            />
-          )}
-        </>
+        <CrisisModeWorkspace
+          earthquakeData={earthquakeData}
+          viewer={viewer}
+          geminiReport={gemini.structuredReport}
+          geminiLoading={gemini.loading}
+          onTriggerGemini={gemini.runAnalysis}
+        />
       )}
+
+      {/* ── Low-Frequency Bottom Operational Status Bar ── */}
+      <BottomStatusBar />
     </div>
   );
 }

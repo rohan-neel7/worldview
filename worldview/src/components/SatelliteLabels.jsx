@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as Cesium from 'cesium';
 
-const UPDATE_INTERVAL_MS = 5_000;
-const MAX_LABELS = 15;
+// Key strategic space assets to label selectively
+const KEY_ASSETS = ['ISS (ZARYA)', 'TIANGONG', 'HST', 'CSS (TIANHE)'];
 
-export default function SatelliteLabels({ viewer, satelliteData, onSatelliteClick }) {
+export default function SatelliteLabels({ viewer, satelliteData, onSatelliteClick, selectedSatelliteName }) {
   const [labels, setLabels] = useState([]);
   const intervalRef = useRef(null);
 
@@ -16,24 +16,18 @@ export default function SatelliteLabels({ viewer, satelliteData, onSatelliteClic
 
     const computeLabels = () => {
       if (!viewer || viewer.isDestroyed()) return;
-      const viewport = document.querySelector('.globe-wrapper');
-      if (!viewport) return;
-
-      const rect = viewport.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const r = rect.width / 2;
-      if (r <= 0) return;
-
       const canvas = viewer.scene.canvas;
+      if (!canvas) return;
       const canvasRect = canvas.getBoundingClientRect();
 
-      const INNER_RATIO = 0.20;
-      const OUTER_RATIO = 1.30;
-      const LABEL_RATIO = 1.15;
+      const filtered = satelliteData.filter((s) => {
+        if (!s.name) return false;
+        if (selectedSatelliteName && s.name === selectedSatelliteName) return true;
+        return KEY_ASSETS.some((k) => s.name.toUpperCase().includes(k));
+      });
 
-      const candidates = [];
-      for (const sat of satelliteData) {
+      const nextLabels = [];
+      for (const sat of filtered.slice(0, 3)) {
         if (sat.lon == null || sat.lat == null) continue;
         try {
           const cartesian = Cesium.Cartesian3.fromDegrees(sat.lon, sat.lat, (sat.alt || 400) * 1000);
@@ -42,51 +36,27 @@ export default function SatelliteLabels({ viewer, satelliteData, onSatelliteClic
 
           const winX = screenPos.x + canvasRect.left;
           const winY = screenPos.y + canvasRect.top;
-          const dx = winX - cx;
-          const dy = winY - cy;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const ratio = dist / r;
 
-          if (ratio < INNER_RATIO || ratio > OUTER_RATIO) continue;
-          candidates.push({
-            sat,
-            dx, dy,
-            angle: Math.atan2(dy, dx),
-            edgeScore: 1 - Math.abs(ratio - 1.0),
+          nextLabels.push({
+            id: sat.name.replace(/\s*\(.*\)/, ''),
+            fullName: sat.name,
+            x: winX,
+            y: winY,
+            satData: sat,
+            isSelected: selectedSatelliteName === sat.name,
           });
-        } catch {}
+        } catch (_e) {}
       }
 
-      candidates.sort((a, b) => b.edgeScore - a.edgeScore);
-      const selected = candidates.slice(0, MAX_LABELS);
-      const usedAngles = [];
-      const MIN_ANGLE_GAP = 0.15;
-      const finalLabels = [];
-
-      for (const c of selected) {
-        if (usedAngles.some(a => Math.abs(angleDiff(a, c.angle)) < MIN_ANGLE_GAP)) continue;
-        usedAngles.push(c.angle);
-        const labelX = cx + Math.cos(c.angle) * r * LABEL_RATIO;
-        const labelY = cy + Math.sin(c.angle) * r * LABEL_RATIO;
-        finalLabels.push({
-          id: formatSatId(c.sat.name),
-          x: labelX,
-          y: labelY,
-          opacity: 0.5 + c.edgeScore * 0.4,
-          // Store original satellite data for click handler
-          satData: c.sat,
-        });
-      }
-      setLabels(finalLabels);
+      setLabels(nextLabels);
     };
 
-    const startTimer = setTimeout(computeLabels, 2000);
-    intervalRef.current = setInterval(computeLabels, UPDATE_INTERVAL_MS);
+    computeLabels();
+    intervalRef.current = setInterval(computeLabels, 3000);
     return () => {
-      clearTimeout(startTimer);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [viewer, satelliteData]);
+  }, [viewer, satelliteData, selectedSatelliteName]);
 
   const handleLabelClick = (label) => {
     if (!onSatelliteClick || !label.satData) return;
@@ -97,44 +67,35 @@ export default function SatelliteLabels({ viewer, satelliteData, onSatelliteClic
   if (labels.length === 0) return null;
 
   return (
-    <div className="satellite-labels-container">
+    <div className="satellite-labels-container" style={{ pointerEvents: 'none', position: 'fixed', inset: 0, zIndex: 50 }}>
       {labels.map((label) => (
         <button
-          key={label.id}
+          key={label.fullName}
           type="button"
           aria-label={`Select satellite ${label.id}`}
-          className={`satellite-label glow-text-amber ${onSatelliteClick ? 'clickable' : ''}`}
+          className={`satellite-label ${label.isSelected ? 'selected' : ''}`}
           style={{
-            left: `${label.x}px`,
-            top: `${label.y}px`,
-            opacity: label.opacity,
-            background: 'none',
-            border: 'none',
-            padding: 0,
+            position: 'absolute',
+            left: `${label.x + 8}px`,
+            top: `${label.y - 12}px`,
+            pointerEvents: 'auto',
+            background: 'rgba(5, 10, 18, 0.85)',
+            border: `1px solid ${label.isSelected ? 'var(--color-amber)' : 'rgba(255, 215, 0, 0.4)'}`,
+            borderRadius: '3px',
+            padding: '1px 6px',
             cursor: 'pointer',
-            color: 'inherit',
-            font: 'inherit',
-            outline: 'none'
+            color: 'var(--color-amber)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '11px',
+            letterSpacing: '0.05em',
+            boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+            transform: 'translateY(-50%)',
           }}
           onClick={() => handleLabelClick(label)}
         >
-          {label.id}
+          <span>{label.id}</span>
         </button>
       ))}
     </div>
   );
-}
-
-function angleDiff(a, b) {
-  let d = b - a;
-  while (d > Math.PI) d -= 2 * Math.PI;
-  while (d < -Math.PI) d += 2 * Math.PI;
-  return d;
-}
-
-function formatSatId(name) {
-  if (!name) return 'SAT-00000';
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-  return `SAT-${String(Math.abs(hash) % 100000).padStart(5, '0')}`;
 }

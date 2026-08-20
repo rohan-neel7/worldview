@@ -143,8 +143,9 @@ export class WildfireIntelligence {
       maxWindSpeedMps > 0 ? ` Surface wind speed: ${maxWindSpeedMps.toFixed(1)} m/s.` : ''
     }`;
 
+    const rweId = cluster.realWorldEventId || cluster.clusterId;
     return new HazardHypothesis({
-      id: `hyp-fire-${cluster.clusterId}`,
+      id: `hyp-fire-${rweId.replace(/[^a-zA-Z0-9]/g, '_')}`,
       hazardType: 'WILDFIRE',
       title: `Wildfire Complex (${hotspots.length} Hotspots) - ${place}`,
       description,

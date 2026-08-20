@@ -22,6 +22,7 @@ import {
 import * as Cesium from 'cesium';
 import { useWorldView } from '../WorldViewContext';
 import { globalCameraController } from '../engine/camera/CentralizedCameraController.js';
+import { scoreToSeverity } from '../engine/risk/severityPolicy.js';
 
 export default function IncidentCommandDossier({
   isOpen,
@@ -82,11 +83,11 @@ export default function IncidentCommandDossier({
   const impact = activeImpactData || incident.impactData;
   const risk = incident.risk || {};
   const riskScore = typeof risk.score === 'number' ? risk.score : 84;
-  const severity = risk.severity || incident.severity || 'CRITICAL';
+  const severity = risk.severity || incident.severity || scoreToSeverity(riskScore);
 
   // Sensor Verification vs Model Assessment Confidence
   const eventConfidencePct = 98; // Verified USGS upstream telemetry
-  const assessmentConfidencePct = Math.round((incident.confidence || 0.74) * 100);
+  const assessmentConfidencePct = Math.round((incident.confidence || risk.confidence || 0.74) * 100);
 
   // Primary Seismic Metadata
   const primaryEvidence = incident.evidence?.find((e) => e.metrics?.magnitude) || incident.evidence?.[0] || {};
@@ -97,8 +98,9 @@ export default function IncidentCommandDossier({
   const formattedObservedTime = new Date(observedAt).toISOString().replace('T', ' ').split('.')[0] + 'Z';
   const sourceMode = incident.sourceMode || 'LIVE';
 
-  // Impact & Exposure Counts
-  const popExposed = impact?.exposureMetrics?.populationExposed || 0;
+  // Impact & Exposure Counts (Guaranteed Non-Negative)
+  const rawPopExposed = impact?.exposureMetrics?.populationExposed;
+  const popExposed = typeof rawPopExposed === 'number' ? Math.max(0, rawPopExposed) : null;
   const hospitals = impact?.exposedAssets?.hospitals || [];
   const airports = impact?.exposedAssets?.airports || [];
   const ports = impact?.exposedAssets?.ports || [];
@@ -115,6 +117,14 @@ export default function IncidentCommandDossier({
     if (sev === 'HIGH') return 'sev-high';
     if (sev === 'MODERATE') return 'sev-moderate';
     return 'sev-low';
+  };
+
+  const formatPopKpi = (pop) => {
+    if (pop === null || pop === undefined || pop < 0) return 'N/A';
+    if (pop >= 1000000) return `${(pop / 1000000).toFixed(1)}M`;
+    if (pop >= 1000) return `${Math.round(pop / 1000)}K`;
+    if (pop > 0) return `${pop}`;
+    return '0';
   };
 
   const handleCopyDossier = () => {
@@ -242,11 +252,7 @@ ${geminiReport?.directive || ''}
       <div className="incident-kpi-strip font-mono">
         <div className="kpi-block">
           <span className="kpi-num highlight-amber">
-            {popExposed >= 1000000
-              ? `${(popExposed / 1000000).toFixed(1)}M`
-              : popExposed > 0
-              ? `${Math.round(popExposed / 1000)}K`
-              : '< 5K'}
+            {formatPopKpi(popExposed)}
           </span>
           <span className="kpi-label">POP. EXPOSED</span>
         </div>

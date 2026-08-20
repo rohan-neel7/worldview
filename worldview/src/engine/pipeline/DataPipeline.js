@@ -4,6 +4,7 @@ import { IncidentManager } from '../incident/IncidentManager.js';
 import { RiskEngine } from '../risk/RiskEngine.js';
 import { ScenarioRunner } from '../simulation/ScenarioRunner.js';
 import { SourceMode } from '../event/types.js';
+import { IntelligenceEngine } from '../intelligence/index.js';
 
 export class DataPipeline {
   /**
@@ -13,6 +14,7 @@ export class DataPipeline {
     this.adapterRegistry = options.adapterRegistry || defaultAdapterRegistry;
     this.fusionEngine = options.fusionEngine || defaultFusionEngine;
     this.incidentManager = options.incidentManager || new IncidentManager();
+    this.intelligenceEngine = options.intelligenceEngine || new IntelligenceEngine();
     this.riskEngine = RiskEngine;
     this.scenarioRunner = new ScenarioRunner(this);
 
@@ -32,7 +34,7 @@ export class DataPipeline {
   /**
    * Primary ingestion entry point: ingests raw provider payload through adapter.
    *
-   * @param {string} adapterKey - 'USGS' | 'OpenSky' | 'CelesTrak' | 'AISStream' | 'OpenMeteo' | 'adsb.lol' | 'SIMULATION'
+   * @param {string} adapterKey - 'USGS' | 'OpenSky' | 'CelesTrak' | 'AISStream' | 'OpenMeteo' | 'adsb.lol' | 'SIMULATION' | etc.
    * @param {any} rawData - Upstream raw payload
    * @param {object} [context={}]
    * @returns {{ normalizedCount: number, activeIncidentsCount: number, error: string|null }}
@@ -56,7 +58,7 @@ export class DataPipeline {
   }
 
   /**
-   * Ingests already-normalized CanonicalEvent objects into working memory and runs downstream fusion/risk.
+   * Ingests already-normalized CanonicalEvent objects into working memory and runs downstream intelligence.
    *
    * @param {Array<object>} events - CanonicalEvent objects
    */
@@ -83,41 +85,23 @@ export class DataPipeline {
     this.metrics.lastProcessedAt = new Date().toISOString();
     this.recomputeMetrics();
 
-    // Downstream Pipeline: Fusion -> Incident Engine -> Risk Engine
+    // Downstream Pipeline: Intelligence Engine (Correlation -> Hypotheses -> Incident Promotion)
     this.evaluatePipeline();
   }
 
   /**
    * Executes the downstream intelligence pipeline:
-   * Working Memory -> Fusion Engine -> Risk Engine -> Incident Manager
+   * Working Memory -> Intelligence Engine (Correlation -> RealWorldEvent -> Hypotheses) -> Incident Manager
    */
   evaluatePipeline() {
     const allEvents = Array.from(this.eventsStore.values());
+    if (allEvents.length === 0) return;
 
-    // 1. Fusion Engine evaluates all active events
-    const hypotheses = this.fusionEngine.evaluate(allEvents);
+    // Run full deterministic Intelligence Engine evaluation
+    const { hypotheses } = this.intelligenceEngine.evaluate(allEvents);
 
-    // 2. For each hypothesis, calculate deterministic risk and ingest into Incident Manager
-    for (const hyp of hypotheses) {
-      // Aggregate metrics from all evidence items
-      const aggregatedMetrics = {};
-      for (const evItem of hyp.evidence || []) {
-        if (evItem.metrics) {
-          Object.assign(aggregatedMetrics, evItem.metrics);
-        }
-      }
-
-      // 3. Risk Engine evaluates pure mathematical score & breakdown
-      const riskAssessment = this.riskEngine.calculate({
-        hazardType: hyp.hazardType,
-        metrics: aggregatedMetrics,
-        confidence: hyp.confidence,
-        evidenceGaps: hyp.evidenceGaps || [],
-      });
-
-      // 4. Ingest into Incident Manager (updates lifecycle and evidence)
-      this.incidentManager.ingestHypothesis(hyp, riskAssessment);
-    }
+    // Promote hypotheses to canonical IncidentManager
+    this.intelligenceEngine.promoteHypotheses(hypotheses, { incidentManager: this.incidentManager });
   }
 
   recomputeMetrics() {
@@ -164,8 +148,10 @@ export class DataPipeline {
   }
 
   getPipelineMetrics() {
+    const intelMetrics = this.intelligenceEngine.getMetrics();
     return {
       ...this.metrics,
+      ...intelMetrics,
       activeEventsInStore: this.eventsStore.size,
       totalIncidents: this.incidentManager.getAll().length,
       activeIncidents: this.incidentManager.getActive().length,
@@ -175,6 +161,7 @@ export class DataPipeline {
   clear() {
     this.eventsStore.clear();
     this.incidentManager.clear();
+    this.intelligenceEngine.clear();
     this.metrics = {
       totalIngested: 0,
       liveCount: 0,

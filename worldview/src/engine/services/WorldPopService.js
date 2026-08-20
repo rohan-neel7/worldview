@@ -10,6 +10,8 @@
  *     `method: 'GEOMETRIC_DENSITY_APPROXIMATION'`.
  *   - Does NOT load massive global rasters into the browser bundle.
  *   - Data state is strictly STATIC.
+ *   - HARD BOUNDARY ASSERTION: Population exposure must obey population >= 0.
+ *     Negative values are strictly rejected, triggering a diagnostic warning and returning null / UNAVAILABLE.
  */
 
 import { DataState } from '../providers/providerTypes.js';
@@ -54,6 +56,11 @@ export class WorldPopService {
     if (typeof lat !== 'number' || typeof lon !== 'number' || typeof radiusKm !== 'number') {
       return {
         estimatedPopulation: null,
+        populationTotal: null,
+        populationExposed: null,
+        populationHighRisk: null,
+        populationModerateRisk: null,
+        populationLowRisk: null,
         areaKm2: 0,
         averageDensityPerKm2: null,
         status: 'UNAVAILABLE',
@@ -64,6 +71,11 @@ export class WorldPopService {
     if (radiusKm <= 0) {
       return {
         estimatedPopulation: 0,
+        populationTotal: 0,
+        populationExposed: 0,
+        populationHighRisk: 0,
+        populationModerateRisk: 0,
+        populationLowRisk: 0,
         areaKm2: 0,
         averageDensityPerKm2: 0,
         dataset: this.dataset,
@@ -87,6 +99,11 @@ export class WorldPopService {
       return {
         status: 'UNAVAILABLE',
         estimatedPopulation: null,
+        populationTotal: null,
+        populationExposed: null,
+        populationHighRisk: null,
+        populationModerateRisk: null,
+        populationLowRisk: null,
         areaKm2: Math.round(areaKm2 * 10) / 10,
         averageDensityPerKm2: null,
         dataset: this.dataset,
@@ -130,11 +147,40 @@ export class WorldPopService {
       method = 'GEOMETRIC_DENSITY_APPROXIMATION';
     }
 
-    const estimatedPopulation = Math.round(areaKm2 * baseDensity);
+    let estimatedPopulation = Math.round(areaKm2 * baseDensity);
+
+    // Hard boundary assertion & validation (Correction #15: Zero Negative Values)
+    if (estimatedPopulation < 0) {
+      console.warn('[WorldPopService] Diagnostic: Negative population calculated, clamping to null/UNAVAILABLE.');
+      return {
+        status: 'UNAVAILABLE',
+        estimatedPopulation: null,
+        populationTotal: null,
+        populationExposed: null,
+        areaKm2: Math.round(areaKm2 * 10) / 10,
+        averageDensityPerKm2: null,
+        dataset: this.dataset,
+        datasetVersion: this.datasetVersion,
+        resolution: this.resolution,
+        method: 'UNAVAILABLE',
+        dataState: DataState.STATIC,
+        timestamp: new Date().toISOString(),
+        note: 'Invalid negative population calculation rejected.',
+      };
+    }
+
+    const populationHighRisk = Math.round(estimatedPopulation * 0.15);
+    const populationModerateRisk = Math.round(estimatedPopulation * 0.45);
+    const populationLowRisk = estimatedPopulation - populationHighRisk - populationModerateRisk;
 
     const result = {
       status: 'AVAILABLE',
       estimatedPopulation,
+      populationTotal: estimatedPopulation,
+      populationExposed: estimatedPopulation,
+      populationHighRisk,
+      populationModerateRisk,
+      populationLowRisk,
       areaKm2: Math.round(areaKm2 * 10) / 10,
       averageDensityPerKm2: baseDensity,
       dataset: this.dataset,

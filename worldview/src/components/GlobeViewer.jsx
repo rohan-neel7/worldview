@@ -460,7 +460,8 @@ export default function GlobeViewer({
     selectedCrisisId,
     selectCrisis,
     clearSelectedCrisis,
-    selectedCountry
+    selectedCountry,
+    showRawTelemetryOnGlobe
   } = useWorldView();
 
   // ── Helpers ──
@@ -1502,9 +1503,9 @@ export default function GlobeViewer({
       shipCollectionRef.current.show = !isCrisis && activeLayers?.ships !== false;
     }
     if (quakeCollectionRef.current) {
-      quakeCollectionRef.current.show = activeLayers?.earthquakes !== false;
+      quakeCollectionRef.current.show = isCrisis ? showRawTelemetryOnGlobe : (activeLayers?.earthquakes !== false);
     }
-  }, [isCrisisMode, activeLayers]);
+  }, [isCrisisMode, activeLayers, showRawTelemetryOnGlobe]);
 
   // ── Incident Mode: Live Feed Opacity Modulation (Subtle prominence) ──
   useEffect(() => {

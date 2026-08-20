@@ -76,6 +76,7 @@ export class EarthquakeIntelligence {
         relevance: 'EXPOSURE_SIGNAL',
         confidence: 0.90,
         isOfficial: false,
+        sourceMode: primaryEvent.sourceMode || SourceMode.LIVE,
         dataState: DataState.STATIC,
         relationship: `Demographic exposure baseline: ~${exposure.population.estimatedPopulation.toLocaleString()} residents in ${moderateRadiusKm}km shaking perimeter (${exposure.population.method})`,
         metrics: {
@@ -98,6 +99,7 @@ export class EarthquakeIntelligence {
         relevance: 'ENVIRONMENTAL_CONTEXT',
         confidence: 0.92,
         isOfficial: false,
+        sourceMode: primaryEvent.sourceMode || SourceMode.LIVE,
         dataState: DataState.STATIC,
         relationship: `Topographic baseline: ${exposure.terrain.elevationMeters}m elevation, ${exposure.terrain.derived?.slopeDegrees?.toFixed(1) || 0}° slope gradient (${exposure.terrain.terrainType})`,
         metrics: {
@@ -151,8 +153,9 @@ export class EarthquakeIntelligence {
 
     const description = `M${mag.toFixed(1)} seismic rupture (depth ${depth}km) near ${place}. Estimated shaking extent: ${moderateRadiusKm}km perimeter (${popText}). ${cluster.corroborationNotes}`;
 
+    const rweId = cluster.realWorldEventId || primaryEvent.id;
     return new HazardHypothesis({
-      id: `hyp-quake-${primaryEvent.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      id: `hyp-quake-${rweId.replace(/[^a-zA-Z0-9]/g, '_')}`,
       hazardType: 'EARTHQUAKE',
       title: `M${mag.toFixed(1)} Earthquake - ${place}`,
       description,

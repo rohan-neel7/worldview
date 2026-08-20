@@ -1,5 +1,6 @@
 import { IncidentStatus, SeverityLevel } from '../event/types.js';
 import { createIncident, transitionIncident } from './IncidentModel.js';
+import { scoreToSeverity } from '../risk/severityPolicy.js';
 
 export class IncidentManager {
   constructor() {
@@ -7,7 +8,7 @@ export class IncidentManager {
   }
 
   /**
-   * Ingests a hypothesis produced by the Fusion Engine and attaches its risk assessment.
+   * Ingests a hypothesis produced by the Intelligence / Fusion Engine and attaches its risk assessment.
    *
    * @param {object} hypothesis
    * @param {object} [riskAssessment=null]
@@ -16,10 +17,24 @@ export class IncidentManager {
   ingestHypothesis(hypothesis, riskAssessment = null) {
     if (!hypothesis || !hypothesis.id) return null;
 
-    const existing = this.incidents.get(hypothesis.id);
+    const incidentId = hypothesis.id.startsWith('inc-')
+      ? hypothesis.id
+      : hypothesis.id.replace(/^hyp-/, 'inc-');
+
+    const existing = this.incidents.get(incidentId) || this.incidents.get(hypothesis.id);
+
+    // Resolve severity from riskAssessment or score
+    let severity = SeverityLevel.MODERATE;
+    if (riskAssessment?.severity) {
+      severity = riskAssessment.severity;
+    } else if (typeof riskAssessment?.score === 'number') {
+      severity = scoreToSeverity(riskAssessment.score);
+    } else if (hypothesis.severity) {
+      severity = hypothesis.severity;
+    }
 
     if (existing) {
-      // Merge new evidence
+      // Merge new evidence without duplicates
       const existingEventIds = new Set(existing.evidence.map((e) => e.eventId));
       const newEvidence = [...existing.evidence];
 
@@ -32,16 +47,13 @@ export class IncidentManager {
         }
       }
 
-      // Determine severity from risk score if provided
-      let severity = existing.severity;
-      if (riskAssessment?.severity) {
-        severity = riskAssessment.severity;
-      }
-
       let updated = {
         ...existing,
-        confidence: Math.max(existing.confidence, hypothesis.confidence || 0.5),
+        id: existing.id,
+        confidence: Math.max(existing.confidence, hypothesis.confidence || hypothesis.assessmentConfidence || 0.5),
         severity,
+        location: hypothesis.location || existing.location,
+        geometry: hypothesis.geometry || existing.geometry,
         evidence: newEvidence,
         evidenceGaps: hypothesis.evidenceGaps || existing.evidenceGaps,
         risk: riskAssessment || existing.risk,
@@ -66,20 +78,14 @@ export class IncidentManager {
       return updated;
     }
 
-    // Determine initial severity
-    let initialSeverity = SeverityLevel.MODERATE;
-    if (riskAssessment?.severity) {
-      initialSeverity = riskAssessment.severity;
-    }
-
     // Create new incident
     const newInc = createIncident({
-      id: hypothesis.id,
+      id: incidentId,
       title: hypothesis.title,
       type: hypothesis.hazardType,
       status: hypothesis.status || IncidentStatus.DETECTED,
-      severity: initialSeverity,
-      confidence: hypothesis.confidence || 0.5,
+      severity,
+      confidence: hypothesis.confidence || hypothesis.assessmentConfidence || 0.5,
       sourceMode: hypothesis.sourceMode,
       location: hypothesis.location,
       geometry: hypothesis.geometry,
